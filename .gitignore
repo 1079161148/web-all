@@ -1,0 +1,63 @@
+# ===== 依赖 =====
+node_modules/
+.pnpm-store/
+
+# ===== 构建产物 =====
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# ===== 日志 =====
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ===== 环境变量与本地凭据（禁止提交密钥）=====
+.env
+.env.local
+.env.*.local
+
+# 本地开发配置：含个人数据库密码，绝不入库
+server/**/src/main/resources/application-local.yml
+# 但模板文件要提交，供团队复制
+!server/**/src/main/resources/application-local.yml.example
+
+# ===== IDE =====
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.iml
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+
+# ===== 后端构建产物 =====
+server/**/target/
+!server/**/target/.gitkeep
+
+# ===== 契约生成产物 =====
+# 说明：packages/api/src/generated 必须提交（契约优先要求 CI 校验生成产物与提交一致，
+# 见设计文档 §10.2）。因此这里显式不忽略，仅忽略临时文件。
+packages/api/src/generated/**/*.tmp
+
+# ===== 测试与覆盖率 =====
+coverage/
+playwright-report/
+test-results/
+
+# ===== 契约流水线的中间产物 =====
+# openapi.stripped.json 由 prepare-spec.mjs 从 openapi.json 机械派生
+# （剥掉统一响应体外壳 R<T>），只被 orval.config.ts 的 input.target 读取。
+#
+# 为什么它**不**需要入库，而 src/generated 需要：
+#   · src/generated 是「交付给前端调用的产物」，CI 要校验它与契约一致，
+#     所以必须入库才能比对
+#   · openapi.stripped.json 是「流水线内部的中间步骤」，每次 gen / gen:check
+#     都会先重新生成它再使用，没有任何环节校验它的提交版本
+#
+# 入库它只有坏处：契约一变就产生第二份 98KB 的 diff 噪声，
+# 而且会诱使人以为它是契约源去手工编辑（它的上游是 openapi.json）。
+packages/api/openapi.stripped.json

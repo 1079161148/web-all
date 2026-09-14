@@ -1,0 +1,216 @@
+---
+description: 后端 DDD 架构规范：四层分层与依赖方向、务实 DDD 三级策略、聚合根与值对象建模、领域事件、仓储与 MyBatis 的三层对象分离、应用层编排边界。写后端 Java 代码、新建模块、评审后端 PR 时应用。
+alwaysApply: true
+enabled: true
+provider:
+---
+
+# 后端 DDD 架构规范
+
+## 1. 四层分层与依赖方向（不可违反）
+
+```
+interfaces（用户接口层）      Controller / Request / Response / Assembler
+        ↓ 依赖
+application（应用层）          AppService / Command / Query / DTO / 事务边界
+        ↓ 依赖
+domain（领域层）★ 零框架依赖    聚合根 / 实体 / 值对象 / 领域事件 / 仓储接口 / 领域服务
+        ↑ 依赖倒置（实现 domain 定义的接口）
+infrastructure（基础设施层）    RepositoryImpl / Mapper / PO / 缓存 / ACL
+```
+
+**硬性约束（ArchUnit 校验，破坏即构建失败）**：
+
+| 层 | 禁止依赖 |
+|---|---|
+| `domain` | `org.springframework.*`、`com.baomidou.*`、`jakarta.persistence.*`，以及 `application` / `infrastructure` / `interfaces` |
+| `application` | `infrastructure`（只能依赖 domain 定义的接口） |
+| `interfaces` | 直接依赖 `infrastructure` |
+
+**端口与适配器**：领域层需要外部能力（密码编码、缓存、外部 API）时，在 `domain` 定义 **Port 接口**，在 `infrastructure` 实现。
+
+```java
+// ✅ domain 层定义
+public interface PasswordEncoderPort {
+    EncodedPassword encode(RawPassword raw);
+}
+
+// ✅ infrastructure 层实现（包装 Spring Security）
+@Repository
+public class PasswordEncoderAdapter implements PasswordEncoderPort { ... }
+```
+
+---
+
+## 2. 务实 DDD：三级建模策略
+
+> **最重要的免责声明**：对 CRUD 型模块全量套用 DDD（聚合 + 领域事件 + 仓储）会让开发效率下降 30~50%。**判据：如果一个模块的业务规则能用一句 `if` 表达完，它就不配 DDD。**
+
+| 级别 | 适用 | 建模方式 |
+|---|---|---|
+| **A 富领域模型** | 有业务不变量、状态机、复杂规则的核心域（租户生命周期、套餐配额、用户状态机、角色授权策略、工作流） | 聚合根 + 值对象 + 领域事件 + 仓储 + 领域服务 |
+| **B 事务脚本 + 仓储** | 以 CRUD 为主的支撑域（字典、参数配置、公告、岗位、文件记录） | Entity + Repository + AppService，**不搞聚合，不搞领域事件** |
+| **C 纯读写** | 日志、统计、报表 | QueryService + Mapper 直接返回 VO，**完全绕过领域层** |
+
+---
+
+## 3. 聚合建模规则
+
+### 3.1 聚合根
+
+- **零框架注解** —— 聚合根上不得出现 `@TableName` / `@Entity` / `@Service`
+- **不变量由聚合保证**，不散落到 AppService
+- **业务动作产出领域事件**，不在 Service 里"顺手清缓存"
+- **时间通过 `Clock` 注入**，禁止在领域层直接调 `Instant.now()`（否则无法确定性测试）
+- **状态流转由值对象内的状态机裁决**，用异常拒绝非法流转
+
+```java
+// ✅ 正确
+public void activate(Clock clock) {
+    if (!status.canTransitTo(TenantStatus.ACTIVE)) {
+        throw new IllegalTenantStateException(status, TenantStatus.ACTIVE);
+    }
+    this.status = TenantStatus.ACTIVE;
+    this.events.add(new TenantActivatedEvent(id, clock.instant()));
+}
+```
+
+### 3.2 聚合边界
+
+- **跨聚合只持 ID 引用**，不持对象引用（如 `User` 只存 `Set<RoleId>`，不存 `List<Role>`）
+- **一次事务只修改一个聚合**；跨聚合一致性由领域服务编排或最终一致解决
+- **聚合根要小** —— 把角色、部门塞进 User 聚合是典型错误
+
+### 3.3 值对象
+
+| 值对象 | 不变量 |
+|---|---|
+| `TenantId` / `UserId` / `RoleId` | 非空、正数 |
+| `TenantCode` | 6-32 位小写字母数字连字符、全局唯一、创建后不可改 |
+| `Username` | 4-32 位、字母开头、**租户内**唯一 |
+| `RawPassword` / `EncodedPassword` | 强度策略 / 算法标识 |
+| `Email` / `PhoneNumber` | 格式校验 |
+| `DataScope` | 枚举 + 自定义部门集合 |
+| `PermissionCode` | `{context}:{resource}:{action}` 三段式 |
+| `Quota` | 各维度非负 |
+| `Money` | BigDecimal + 币种 |
+
+---
+
+## 4. 应用层规则
+
+```java
+@Service
+public class TenantAppService {
+    private final TenantRepository tenantRepository;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Transactional(rollbackFor = Exception.class)   // ★ 应用层是唯一事务边界
+    public TenantId createTenant(CreateTenantCommand cmd) {
+        if (tenantRepository.existsByCode(cmd.code())) {
+            throw new BizException(ErrorCode.TENANT_CODE_DUPLICATED);
+        }
+        Tenant tenant = Tenant.create(cmd.code(), cmd.name(), cmd.plan(), clock);
+        tenantRepository.save(tenant);
+        tenant.pullEvents().forEach(eventPublisher::publishEvent);
+        return tenant.id();
+    }
+
+    /** 读路径：直查 VO，不做领域转换 */
+    public PageResult<TenantVO> pageTenant(TenantQuery query) {
+        return tenantQueryService.page(query);
+    }
+}
+```
+
+**规则**：
+
+1. **事务边界只在 AppService** —— Controller 与 Repository 都不得开事务
+2. **AppService 只做编排**：加载聚合 → 调用领域方法 → 保存 → 发事件。**禁止在 AppService 写业务分支 `if`**（Review 时见业务 if 一律打回）
+3. `Command` / `Query` 用 `record`（不可变）
+4. **CQRS 读写分离**：写走聚合 + Repository；读走 QueryService 直接查 VO，零转换开销
+
+---
+
+## 5. 仓储与持久化：三层对象分离（DDD + MyBatis 的核心难点）
+
+MyBatis-Plus 的 `@TableName` 实体是贫血的、带框架注解的，**与充血聚合根天然冲突**。必须三层分离：
+
+| 层 | 对象 | 特征 |
+|---|---|---|
+| `domain` | **聚合根 / 实体** | 充血、零框架注解、含业务方法 |
+| `infrastructure` | **PO**（如 `TenantPO`） | 贫血、`@TableName` / `@TableId`、对应表结构 |
+| `application` | **DTO / VO** | 对外契约，不含业务方法 |
+
+- 转换统一用 **MapStruct**（编译期生成，禁止 BeanUtils 反射拷贝）
+- **仓储接口定义在 `domain`，实现在 `infrastructure`**
+- 仓储接口命名与语义用领域语言（`findById` / `save` / `existsByCode`），不暴露 SQL 概念
+- 乐观锁：`version` 不匹配时 **抛异常而非静默覆盖**
+
+**性能取舍**：核心域写路径接受转换成本换模型纯净；支撑域与读路径直接 `SELECT` 到 VO，绕过领域层。
+
+---
+
+## 6. 领域事件
+
+- 跨模块通信用 **Spring Modulith 的 `@ApplicationModuleListener`**（= `@TransactionalEventListener(AFTER_COMMIT)` + `@Async`）
+- **禁止用裸 `@EventListener` 处理有副作用的逻辑** —— 事务回滚后缓存已清、消息已发，会造成数据不一致
+- Modulith 的事务性 Outbox 保证 **at-least-once**
+- 事件处理器必须幂等
+
+```java
+@Component
+class TenantEventHandlers {
+    @ApplicationModuleListener
+    void on(TenantSuspendedEvent event) {
+        permissionCache.evictByTenant(event.tenantId());
+        onlineUserRegistry.kickAllOf(event.tenantId());
+    }
+}
+```
+
+---
+
+## 7. 限界上下文与模块边界
+
+| 上下文 | 类型 | 表前缀 |
+|---|---|---|
+| **IAM** | 核心域 | `iam_` |
+| **Organization** | 支撑域 | `org_` |
+| **Platform** | 支撑域 | `plt_` |
+| **Audit** | 支撑域 | `aud_` |
+| **Tooling** | 支撑域 | `tls_` |
+| **Workflow** | 核心域（可选） | `wf_` |
+
+- **禁止直接跨上下文引用对方的 Repository / Entity**
+- 需要跨上下文数据 → 通过对方 **Named Interface（公开 API）** 或**集成事件**
+- 用 `ApplicationModules.verify()` 在 CI 中强制校验模块边界
+
+---
+
+## 8. 横切关注点归属
+
+| 关注点 | 实现位置 |
+|---|---|
+| 事务 | `application`（AppService） |
+| 审计日志 | `infrastructure` AOP + `@Audit` 注解（参数脱敏后记录） |
+| 多租户 / 数据权限 | `infrastructure` MyBatis 拦截器 |
+| 字段权限 | `infrastructure` Jackson 序列化器 |
+| 幂等 | `infrastructure` `@Idempotent` + Redis SETNX（仅写接口） |
+| 限流 | `infrastructure` `@RateLimiter` + Redis 令牌桶 |
+| 缓存 | `domain` 定义 Port，`infrastructure` 实现 |
+
+---
+
+## 9. 常见错误（Review 时重点检查）
+
+| # | 错误 | 正确做法 |
+|---|---|---|
+| 1 | 领域层被框架污染（聚合根加 `@TableName` / `@Service`） | ArchUnit 强制 + Review 拦截 |
+| 2 | 直接用 `@TableName` 实体当领域模型 | 三层对象分离 + MapStruct |
+| 3 | AppService 里写业务分支 `if` | 规则下沉到聚合根 / 值对象 |
+| 4 | 聚合根过大（把角色、部门塞进 User） | 跨聚合只持 ID 引用 |
+| 5 | 对支撑域 CRUD 也套全量 DDD | 按第 2 节三级策略选择 |
+| 6 | 领域层硬编码 `Instant.now()` | 注入 `Clock` |
+| 7 | 领域事件在事务提交前投递 | 用 Modulith 事务性 Outbox |
+| 8 | Repository 返回 PO 或泄露 SQL 概念 | 返回聚合根，接口用领域语言 |

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.webadmin</groupId>
+        <artifactId>admin-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>admin-test-support</artifactId>
+    <name>admin-test-support</name>
+    <description>测试支撑：Testcontainers 单例容器、测试数据构造器（Fixture）、集成测试基类</description>
+
+    <!--
+      ⚠️ 构件名注意：Testcontainers 2.0 起所有模块统一加了 `testcontainers-` 前缀
+      （1.x 的 org.testcontainers:mysql 在 2.0 中更名为 org.testcontainers:testcontainers-mysql）。
+      版本由父 POM 导入的 testcontainers-bom 统一管理，此处不写 version。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mysql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

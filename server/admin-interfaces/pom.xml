@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.webadmin</groupId>
+        <artifactId>admin-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>admin-interfaces</artifactId>
+    <name>admin-interfaces</name>
+    <description>用户接口层：Controller、请求/响应对象、参数校验、全局异常处理、OpenAPI 契约</description>
+
+    <!--
+      ★ 设计文档 §4.3：interfaces 层禁止直接依赖 infrastructure。
+      本模块只依赖 application + common，运行时由 admin-bootstrap 完成装配。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-application</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- OpenAPI 契约源：前端类型与请求由此生成（设计文档 §十） -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
+        <!--
+          仅引入 spring-security-core，用于在 Controller 上声明
+          {@code @PreAuthorize} 注解。**不引入 starter** ——
+          过滤器链、加密器、令牌签发等实现都在 infrastructure，
+          interfaces 层不该感知它们（设计文档 §4.3 的依赖方向）。
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

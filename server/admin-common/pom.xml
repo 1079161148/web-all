@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.webadmin</groupId>
+        <artifactId>admin-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>admin-common</artifactId>
+    <name>admin-common</name>
+    <description>通用内核：统一响应、错误码、业务异常、租户/用户上下文（零框架依赖）</description>
+
+    <!--
+      本模块刻意保持「零框架依赖」：不引入 Spring Web / MyBatis / Jakarta Persistence。
+      因为 admin-domain 会依赖本模块，而设计文档 §4.3 红线要求领域层不得被框架污染。
+      ArchUnit 规则会同时守护 ..common.. 与 ..domain.. 两个包。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

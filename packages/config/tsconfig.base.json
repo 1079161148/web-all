@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+
+    /* 设计文档 §2.2：strict 不得关闭 —— 契约优先的收益全靠类型系统兑现 */
+    "strict": true,
+    "noImplicitOverride": true,
+    /* TODO(P1)：团队熟悉后开启 noUncheckedIndexedAccess，进一步消灭下标越界。
+       先关闭是为了让 P0 骨架能跑通构建，避免与 UI 库类型定义冲突产生大量噪音 */
+    "noUncheckedIndexedAccess": false,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": false,
+
+    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  }
+}

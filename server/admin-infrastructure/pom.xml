@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.webadmin</groupId>
+        <artifactId>admin-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>admin-infrastructure</artifactId>
+    <name>admin-infrastructure</name>
+    <description>基础设施层：仓储实现、MyBatis 拦截器链、缓存、对象存储、防腐层</description>
+
+    <!--
+      依赖方向说明（重要）：
+      本模块依赖 admin-domain 与 admin-application —— 这是**合法且必需**的方向，
+      因为适配器（Adapter）必须看得见它要实现的端口（Port）：
+
+        · domain 定义的仓储接口        → TenantRepository    （domain → infrastructure 实现）
+        · application 定义的读取端口   → TenantQueryPort     （application → infrastructure 实现）
+
+      反向是严格禁止的，且由 ArchUnit 强制：
+        · application 不得依赖 infrastructure
+        · domain      不得依赖 infrastructure / application / interfaces
+
+      即：依赖永远指向内层，外层可替换而不影响内层。
+    -->
+    <dependencies>
+        <!-- 依赖倒置：实现 domain 定义的仓储接口 / 领域端口 -->
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-domain</artifactId>
+        </dependency>
+        <!-- 实现 application 定义的读取端口（CQRS 读模型） -->
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-application</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-common</artifactId>
+        </dependency>
+
+        <!-- 持久化 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+        </dependency>
+        <!-- SQL 解析：分页 / 租户 / 数据权限拦截器都在此模块（3.5.9 起拆分） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- 缓存 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!--
+          安全实现：BCrypt 加密、JWT 签发/校验、过滤器链、@PreAuthorize 求值器。
+          放在 infrastructure 而非 interfaces，理由：这些是"能力实现"，
+          与 HTTP 无关（例如 PasswordEncoder 未来也会被定时任务、命令行工具复用）；
+          interfaces 只保留一个薄薄的 spring-security-core 用于声明 @PreAuthorize 注解。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!-- JOSE：NimbusJwtEncoder / NimbusJwtDecoder，用于签发与校验 JWT -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
+        <!-- 资源服务器：JwtAuthenticationToken 等（JWT 过滤器需要） -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-resource-server</artifactId>
+        </dependency>
+        <!--
+          Servlet API 用 provided：Spring Security 的过滤器链基于 Servlet 规范，
+          编译期需要它，但运行期由容器（Tomcat）提供 —— 打成 compile 会把
+          Servlet 容器类打进 jar，与外置容器部署冲突。
+        -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+          spring-webmvc：字段级权限的注入点是 ResponseBodyAdvice，它属于 Web MVC 而非 Servlet 规范。
+          刻意只引 spring-webmvc 而不引 spring-boot-starter-web ——
+          后者会连带拖入内嵌 Tomcat，让 infrastructure 模块平白依赖一个 Web 容器，
+          而容器本就该由 bootstrap 层提供。
+        -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+        </dependency>
+
+        <!-- 对象映射（编译期生成 PO → 读模型 的机械映射） -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+        </dependency>
+
+        <!-- 工具 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-core</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

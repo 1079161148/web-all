@@ -1,0 +1,178 @@
+---
+description: 多租户与安全规范：租户上下文全链路穿透（异步/定时任务/MQ）、租户影响面清单、四维权限（菜单/按钮/数据/字段）、越权防护、敏感数据脱敏、幂等限流、拦截器顺序。涉及数据访问、权限、认证、缓存、文件时应用。
+alwaysApply: false
+enabled: true
+provider:
+---
+
+# 多租户与安全规范
+
+## 1. 多租户是第一等公民（非可选）
+
+默认策略：**共享表 + `tenant_id` 行级隔离**（`COLUMN`）。目标是通过 `TenantIsolationStrategy` 接口支持可插拔的独立库 / 独立 Schema。
+
+---
+
+## 2. 租户上下文全链路穿透 ⚠️ 最容易出隔离事故
+
+```java
+public final class TenantContext {
+    private static final ThreadLocal<TenantId> CURRENT = new ThreadLocal<>();
+    public static void set(TenantId id) { CURRENT.set(id); }
+    public static TenantId get() { return CURRENT.get(); }
+    public static TenantId require() { ... }   // 缺失即抛异常，防止漏隔离
+    public static void clear() { CURRENT.remove(); }
+}
+```
+
+**必须处理的三个穿透场景**：
+
+| 场景 | 问题 | 方案 |
+|---|---|---|
+| **异步线程池** | `ThreadLocal` 不跨线程 → 跨租户数据泄露 | 用 **TransmittableThreadLocal（TTL）** 包装线程池；JDK 25 虚拟线程场景优先用 **`ScopedValue`** |
+| **定时任务** | 无请求上下文 | 任务执行前遍历租户，逐个 `set` / `finally clear` |
+| **MQ / 事件监听** | 消费端无上下文 | 消息体**强制携带 `tenantId`**，消费入口先 `set` |
+
+**要求**：任何新增的异步 / 定时 / 消息逻辑，必须显式声明租户上下文的传递方式，并补集成测试。
+
+---
+
+## 3. 租户影响面清单（新增功能时逐条自查）
+
+| 影响面 | 要求 |
+|---|---|
+| 数据库 | `tenant_id` 列 + **所有唯一索引改为 `(tenant_id, xxx)` 联合唯一** |
+| 缓存 | Redis Key 前缀 `{app}:{tenantId}:...`，**禁止全局 Key** |
+| 文件存储 | 路径 `/tenant/{tenantId}/...`，下载鉴权 + 路径校验（防越权下载） |
+| 定时任务 | 租户级 / 平台级任务分离 |
+| 字典 & 配置 | 支持"平台级默认 + 租户级覆盖"两级 fallback |
+| 日志 | MDC 注入 `tenantId` |
+| 消息通知 | 模板按租户隔离，避免串号 |
+| 配额 | 用户数 / 存储 / API 调用量按租户计量与限流 |
+| 账号唯一性 | 用户名在**租户内**唯一，而非全局 |
+| 租户生命周期 | `PENDING → ACTIVE → SUSPENDED / EXPIRED → CLOSED`，由聚合状态机保证 |
+
+---
+
+## 4. MyBatis 拦截器顺序（顺序错误 = 隐蔽 Bug）
+
+```java
+interceptor.addInnerInterceptor(new TenantLineInnerInterceptor(...));      // 1 租户隔离（最外层）
+interceptor.addInnerInterceptor(new DataPermissionInterceptor(...));       // 2 数据权限
+interceptor.addInnerInterceptor(new PaginationInnerInterceptor(...));      // 3 分页（必须最后）
+interceptor.addInnerInterceptor(new OptimisticLockerInnerInterceptor());   // 4 乐观锁
+```
+
+**顺序错误的后果**：`count` 语句与 `list` 语句条件不一致 → 分页页数错乱、总数不准。**必须用集成测试断言 `count` 与 `list` 结果一致。**
+
+**租户拦截器忽略名单必须显式声明**：平台级表（`iam_tenant`、`plt_dict_type`）、框架表（`event_publication`、`flyway_schema_history`）。**禁止默认放行。**
+
+---
+
+## 5. 四维权限模型
+
+```
+User ──多对多──> Role ──多对多──> Menu/Permission
+                   ├── dataScope   : 全部 / 自定义 / 本部门 / 本部门及以下 / 仅本人
+                   └── fieldPolicy : 字段可见性 / 脱敏规则
+User ──> Dept（树形 ancestors）
+User ──> Tenant（最外层隔离边界）
+```
+
+### 5.1 菜单 / 路由权限
+后端返回菜单树 → 前端 `addRoute`。**前端不硬编码菜单。**
+
+### 5.2 按钮 / 接口权限
+
+| 侧 | 实现 |
+|---|---|
+| 前端 | `v-permission="'iam:user:add'"` 指令，`mounted` 时移除无权限节点（比 `v-if` 更难绕过） |
+| 后端 | `@PreAuthorize("@ps.hasPermission('iam:user:add')")` |
+
+**权限码格式**：`{context}:{resource}:{action}`，如 `iam:user:add`。
+
+> **红线**：前端权限控制只影响体验，**后端必须独立鉴权**。任何新增写接口必须加权限注解。CI 应扫描 Controller 是否漏加。
+
+### 5.3 数据权限
+
+| dataScope | 拼接条件 |
+|---|---|
+| ALL | 无条件 |
+| CUSTOM | `dept_id IN (角色自定义部门集)` |
+| DEPT | `dept_id = 当前用户部门` |
+| DEPT_AND_CHILD | `dept_id IN (本部门及子部门，基于 ancestors 前缀匹配)` |
+| SELF | `create_by = 当前用户` |
+
+超管例外通过 `DataScopeStrategy` 策略对象裁决，**不要写死在拦截器里**。
+
+### 5.4 字段级权限
+
+```java
+public class UserVO {
+    @FieldPermission(visibleFor = {"ROLE_SUPER_ADMIN", "ROLE_FINANCE"},
+                     maskStrategy = MaskStrategy.PHONE)
+    private String phone;
+}
+```
+
+- 由 Jackson 序列化器按当前用户权限上下文裁决
+- **导出 Excel 必须复用同一套策略**（避免"页面打码但导出泄露"）
+- 后端日志同样脱敏
+
+---
+
+## 6. 越权防护（OWASP）
+
+| 风险 | 措施 |
+|---|---|
+| **水平越权** | **所有按 ID 查询必须带 `tenant_id` 条件**（拦截器兜底 + 集成测试矩阵） |
+| **垂直越权** | 后端 `@PreAuthorize` 全覆盖；CI 扫描漏加注解的 Controller |
+| SQL 注入 | 全参数绑定；**MyBatis `${}` 全局禁用**（CI 静态扫描） |
+| XSS | 输入过滤（请求包装器）+ 输出转义 + 富文本服务端净化 + **CSP 响应头** |
+| CSRF | BFF 模式下 Cookie + `SameSite=Strict` + CSRF Token |
+| 文件上传 | 扩展名白名单 + MIME + **魔数校验** + 重命名 + 存储与访问域分离 + 防目录穿越 |
+| 文件下载 | 鉴权 + 签名 URL + 有效期 + 租户路径校验 |
+| 反序列化 | 禁用不安全的 Jackson 多态类型 |
+| 敏感信息泄露 | 响应脱敏 + 日志脱敏 + 异常栈不外泄 + **生产禁用 Swagger UI** |
+| 暴力破解 | 验证码 + 失败锁定 + IP 限流 + 登录审计告警 |
+| 依赖漏洞 | OWASP Dependency-Check / Trivy 纳入 CI |
+
+---
+
+## 7. 认证（OAuth2.1 / OIDC）
+
+- 使用 **Spring Authorization Server**，**禁止自研 JWT 体系**
+- 令牌：`AccessToken`（JWT，15min）+ `RefreshToken`（opaque，7d，服务端存储 → **可精确吊销**）
+- 签名用 RS256，密钥由 KMS / 环境变量注入，**禁止写死在配置文件**
+- 密码 BCrypt（cost ≥ 10）或 Argon2id，**禁止 MD5 / SHA1**
+- 敏感操作（改密、删租户、导出全量数据）要求**二次认证**
+- 前端可选 RSA / SM2 传输加密（HTTPS 之外作为纵深防御）
+
+---
+
+## 8. 幂等与限流
+
+```java
+@Idempotent(expire = 10, message = "请勿重复提交")
+@RateLimiter(limit = 100, window = 60, dimension = Dimension.TENANT)
+@PostMapping("/users")
+public R<UserId> create(@Valid @RequestBody CreateUserRequest req) { ... }
+```
+
+- **幂等**：仅作用于写接口；键 = `租户 + 用户 + 接口 + 参数摘要`
+- **限流维度**：IP（防刷）/ 用户（防误用）/ **租户（配额计量）**
+
+---
+
+## 9. 安全红线
+
+1. ❌ 按 ID 查询不带 `tenant_id` 条件
+2. ❌ 新增写接口不加权限注解
+3. ❌ 前端控制权限而后端不校验
+4. ❌ 缓存 Key 不带租户前缀
+5. ❌ 异步 / 定时 / MQ 场景未传递租户上下文
+6. ❌ 页面脱敏但导出 / 日志不脱敏
+7. ❌ 硬编码密钥、密码、令牌
+8. ❌ 使用 `${}` 拼接 SQL
+9. ❌ 自研 JWT / 自研密码算法
+10. ❌ 修改权限与租户相关逻辑而不补集成测试

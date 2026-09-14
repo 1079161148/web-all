@@ -1,0 +1,35 @@
+{
+  "name": "web-all",
+  "version": "1.0.0",
+  "private": true,
+  "description": "企业级多租户中台系统 - 前端 Monorepo",
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @admin/admin dev",
+    "build": "pnpm --filter @admin/admin run build",
+    "build:only": "pnpm --filter @admin/admin run build:only",
+    "preview": "pnpm --filter @admin/admin preview",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "gen:api": "pnpm --filter @admin/api gen",
+    "gen:page": "plop --plopfile scripts/generators/plopfile.js",
+
+    "//verify": "前端侧门禁。用 build:only 而非 build，因为 typecheck 已在上一行按包跑过一遍",
+    "verify": "pnpm lint && pnpm typecheck && pnpm build:only",
+    "//gen:check": "契约 → 客户端一致性：重新生成并与已提交产物比对。CI 与本地同一命令",
+    "gen:check": "pnpm --filter @admin/api gen:check",
+    "//verify:all": "本地跑完整门禁（后端 + 前端 + 契约），与 CI 各 job 的命令完全一致",
+    "verify:all": "node scripts/verify-all.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "oxlint": "^1.82.0",
+    "plop": "^4.0.5",
+    "turbo": "^2.10.12",
+    "typescript": "^5.9.3"
+  }
+}

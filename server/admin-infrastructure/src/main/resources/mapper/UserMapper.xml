@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  用户列表查询。
+
+  为什么用 XML 而不是 MyBatis-Plus 的 Wrapper（设计文档 §9.6）：
+    · 需要 LEFT JOIN 取部门名，Wrapper 无法表达 JOIN
+    · 条件较多且都可选，XML 的 <if> 比一长串 .eq()/.like() 更易读
+    · 需要在 Mapper 方法上标注 @DataScope —— 这要求查询是一个「具体方法」，
+      而 Wrapper 调用没有可标注的方法
+
+  ⚠️ 这里**不写** tenant_id 与 del_flag 之外的权限条件：
+     · tenant_id 由 TenantLineInnerInterceptor 自动追加
+     · 部门数据范围由 DataPermissionInterceptor 追加
+     手写它们会与拦截器重复，且一旦哪天漏写就会静默越权。
+-->
+<mapper namespace="com.webadmin.infrastructure.persistence.mapper.UserMapper">
+
+    <select id="selectUserPage" resultType="com.webadmin.infrastructure.persistence.po.UserPO">
+        <!-- 显式列出字段而非 SELECT *（设计文档 §9.6）：
+             一来避免把大字段（如将来的签名、扩展 JSON）无谓拉回，
+             二来让"这个接口到底返回了哪些列"在代码里可见 -->
+        SELECT u.id,
+               u.tenant_id,
+               u.dept_id,
+               u.username,
+               u.nickname,
+               u.password,
+               u.email,
+               u.phone,
+               u.sex,
+               u.avatar,
+               u.status,
+               u.login_ip,
+               u.login_time,
+               u.fail_count,
+               u.lock_until,
+               u.remark,
+               u.create_by,
+               u.create_time,
+               u.update_time,
+               d.dept_name AS deptName
+        FROM iam_user u
+                 LEFT JOIN org_dept d ON d.id = u.dept_id AND d.del_flag = 0
+        <where>
+            u.del_flag = 0
+            <if test="query.username != null and query.username != ''">
+                AND u.username LIKE CONCAT('%', #{query.username}, '%')
+            </if>
+            <if test="query.nickname != null and query.nickname != ''">
+                AND u.nickname LIKE CONCAT('%', #{query.nickname}, '%')
+            </if>
+            <if test="query.phone != null and query.phone != ''">
+                AND u.phone LIKE CONCAT('%', #{query.phone}, '%')
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND u.status = #{query.status}
+            </if>
+            <if test="query.deptId != null">
+                <choose>
+                    <!--
+                      includeSubDept 的两种语义：
+                        · true  —— 用部门表的物化路径做前缀匹配，一条 SQL 拿到整棵子树
+                        · false —— 仅该部门
+                      刻意用 EXISTS 子查询而不是再 JOIN 一次 org_dept：
+                      再 JOIN 会让数据权限拦截器面对第二张 org_dept 实例，
+                      条件施加到哪一份上变得难以推理。
+                    -->
+                    <when test="query.includeSubDept != null and query.includeSubDept">
+                        AND EXISTS (SELECT 1
+                                    FROM org_dept sub
+                                    WHERE sub.id = u.dept_id
+                                      AND sub.del_flag = 0
+                                      AND (sub.id = #{query.deptId}
+                                        OR sub.ancestors LIKE CONCAT(
+                                            (SELECT p.ancestors FROM org_dept p WHERE p.id = #{query.deptId}), ',',
+                                            #{query.deptId}, ',%')))
+                    </when>
+                    <otherwise>
+                        AND u.dept_id = #{query.deptId}
+                    </otherwise>
+                </choose>
+            </if>
+            <if test="query.roleId != null">
+                AND EXISTS (SELECT 1
+                            FROM iam_user_role ur
+                            WHERE ur.user_id = u.id
+                              AND ur.role_id = #{query.roleId})
+            </if>
+        </where>
+        <!--
+          排序固定为创建时间倒序。
+          不开放"按任意字段排序"：那需要把前端传来的字段名拼进 ORDER BY，
+          是 SQL 注入的经典入口（且 ORDER BY 无法用参数占位符防护）。
+          真需要多字段排序时，应在此处用 <choose> 白名单显式列出允许的字段。
+        -->
+        ORDER BY u.create_time DESC
+    </select>
+
+</mapper>

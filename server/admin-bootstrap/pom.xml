@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.webadmin</groupId>
+        <artifactId>admin-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>admin-bootstrap</artifactId>
+    <name>admin-bootstrap</name>
+    <description>启动模块：唯一含 main 的模块，负责装配与 Flyway 迁移管理</description>
+
+    <dependencies>
+        <!-- 装配所有模块 -->
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-interfaces</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-infrastructure</artifactId>
+        </dependency>
+
+        <!-- 模块化单体：事务性 Outbox（设计文档 §4.7） -->
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-starter-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-events-jdbc</artifactId>
+        </dependency>
+        <!--
+          ⚠️ 必须显式引入：只加 events-jdbc 会在启动时报
+          「required a bean of type 'EventSerializer' that could not be found」——
+          JDBC 存储只负责「存」，事件载荷的序列化由本模块提供（JacksonEventSerializer）。
+          这是实测踩到的坑，仅看文档不容易发现。
+        -->
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-events-jackson</artifactId>
+        </dependency>
+
+        <!-- 数据库迁移：唯一变更入口（设计文档 §9.1） -->
+        <!--
+          ⚠️ Spring Boot 4.0 把各技术的自动配置类拆到了**独立模块**
+          （spring-boot-flyway / spring-boot-liquibase / spring-boot-jdbc / ...）。
+          只把 flyway-core 放到 classpath 上**不会再触发** FlywayAutoConfiguration ——
+          实测现象：应用正常启动、数据源连通、迁移脚本确实打进了 jar，
+          但日志里完全没有 Flyway 输出，表也没被创建，接口报「表不存在」。
+          这类问题不报配置错误，只是"静默地什么都不做"，很容易误判成脚本路径写错。
+
+          排查方法：先 grep 启动日志有没有 "Flyway" 字样。若完全没有 → 自动配置没生效。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
+        <!-- 可观测性（设计文档 §13.1） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- 测试：架构门禁 + 真实依赖集成测试 -->
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!--
+              集成测试执行（*IT）。
+              ⚠️ 必须显式配置 failsafe，否则 `*IT` 类**永远不会被执行**：
+              Surefire 默认只认 `*Test` / `Test*` / `*Tests` / `*TestCase`，
+              而 `*IT` 是 Failsafe 的约定（设计文档 §13.5 的命名规范）。
+
+              这个坑的隐蔽之处在于：测试类写好了、IDE 里点一下也能过，
+              但 `mvn verify` 从来不跑它 —— 于是 CI 上是绿灯，
+              而那个本该被拦住的 bug 照样进主干。
+              排查方式：看构建日志有没有 "Failsafe" 字样，或者故意让断言失败看是否变红。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+          契约产物生成（设计文档 §10.1）。
+
+          为什么放在 profile 里：
+          springdoc 插件需要通过 HTTP 读取运行中应用的 /v3/api-docs。
+          若把它绑在默认生命周期上，**每次 `mvn install` 都会因连不上 localhost:8080 而报错**，
+          污染正常构建输出（已在实测中出现）。
+
+          正确用法（两步）：
+            ① 另开一个终端启动应用： mvn -pl admin-bootstrap spring-boot:run
+            ② 生成契约：             mvn -pl admin-bootstrap -Popenapi verify
+
+          产物写入 packages/api/openapi.json，前端再执行 pnpm gen:api 生成类型与请求。
+        -->
+        <profile>
+            <id>openapi</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springdoc</groupId>
+                        <artifactId>springdoc-openapi-maven-plugin</artifactId>
+                        <version>1.5</version>
+                        <configuration>
+                            <apiDocsUrl>http://localhost:8080/v3/api-docs</apiDocsUrl>
+                            <outputFileName>openapi.json</outputFileName>
+                            <outputDir>${project.basedir}/../../packages/api</outputDir>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>generate-openapi</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>generate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+</project>

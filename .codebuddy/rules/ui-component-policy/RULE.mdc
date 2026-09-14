@@ -1,0 +1,140 @@
+---
+description: 组件策略：三条封装箱法则（封装约定不封装实现、UI 库只做基础元素、社区有就不自研）、社区内核选型矩阵、Pro 组件职责边界、不封装清单、明确禁止自研的能力。新增或封装任何前端组件、引入新依赖时应用。
+alwaysApply: false
+enabled: true
+provider:
+---
+
+# 组件策略（零自研原则）
+
+## 1. 三条法则
+
+### 法则一：二次封装 = 封装「约定与集成」，不封装「实现」
+
+```
+✅ 正确：ProTable
+   内核能力（虚拟滚动 / 行列编辑 / 树形 / 导出）← 100% 来自 vxe-table
+   我们封装（搜索区 / 工具栏 / 列设置 / 字典翻译 / 权限 / 分页契约 / 状态矩阵 / 主题桥接）
+
+❌ 错误：ProTable 自己实现虚拟滚动、自己写编辑逻辑
+```
+
+**判定标准：如果封装层里有「算法」，就说明封错了。**
+封装层应该是**声明式配置 + 组合 + 约定**，代码量必须很薄（`ProTable` 核心逻辑目标 < 800 行）。
+
+### 法则二：UI 库只负责「基础元素」，重能力全部下沉到专业库
+
+| 层 | 由谁负责 | 例子 |
+|---|---|---|
+| **基础元素** | Naive UI | 按钮、输入框、下拉、弹窗、抽屉、提示、标签、栅格 |
+| **重能力组件** | **专业社区库** | 复杂表格 → vxe-table；动态表单 → form-create；上传 → Uppy；富文本 → Tiptap |
+| **业务抽象** | `@admin/ui` | 只做组合、约定、DX、主题桥接 |
+
+**结构收益**：UI 库（Naive UI）的生态风险被结构性消除 —— 复杂能力本来就不该由它提供。
+
+### 法则三：先问「社区有没有」，有则封装，无则评估是否真的需要
+
+1. 社区有成熟方案 → **封装，禁止自研**
+2. 多个方案 → 选**维护活跃度 + Vue3 生态契合度**最高的（不是功能最多的）
+3. 都没有 → **先问能不能不做**，最后才考虑自研
+
+---
+
+## 2. 社区内核选型矩阵（禁止替换为自研）
+
+| 能力域 | 内核 | 风险 |
+|---|---|---|
+| 基础元素 | **Naive UI 2.44+** | 低 |
+| **复杂表格** | **vxe-table 4.x** | 中 |
+| **动态表单** | **@form-create/naive-ui**（v3） | 中 |
+| **表单设计器（低代码）** | **form-create-designer-naiveui** | 中 |
+| **分片上传 / 断点续传** | **Uppy 4.x + tus-js-client**（后端 tus-java-server） | 中 |
+| 富文本 | **Tiptap 3**（深度定制）或 **wangEditor 5**（开箱快） | 低 |
+| Markdown | **md-editor-v3** | 低 |
+| 图表 | **ECharts 6 + vue-echarts** | 低 |
+| 流程设计器 | **LogicFlow**（审批流）或 **bpmn-js**（BPMN 标准） | 中高 |
+| 拖拽排序 | **Sortable.js（vuedraggable）** | 低 |
+| 代码编辑器 | **CodeMirror 6**（轻量）或 **Monaco** | 低 |
+| Cron 编辑器 | **@vue-js-cron** | 低 |
+| 图标 | **@vicons**（xicons） | 低 |
+| PDF 预览 | **pdfjs-dist / vue-pdf-embed** | 低 |
+| 图片裁剪 | **vue-cropper** | 低 |
+| 新手引导 | **driver.js** | 低 |
+| 命令面板（Cmd+K） | `@vueuse` + **fuse.js**（薄组合 < 200 行） | 低 |
+| 快捷键 | **hotkey.js** 或 `@vueuse/useMagicKeys` | 低 |
+| 打印 | **vue-plugin-hiprint** | 低 |
+| Excel（前端） | **ExcelJS** | 低 |
+| 二维码 | **qrcode** | 低 |
+| 日期 / 工具 | **dayjs** / **VueUse** | 低 |
+| 国际化 | **vue-i18n 11** | 低 |
+| Mock | **MSW** + OpenAPI 自动生成 handler | 低 |
+| 组件工作台 | **Histoire**（备选 Storybook） | 低 |
+| 文档站 | **VitePress** | 低 |
+| 脚手架 | **plop** / **hygen** | 低 |
+| 代码迁移 | **jscodeshift** | 低 |
+
+**关键依赖必须有备选登记**（如 Naive UI → Element Plus / TDesign；form-create → 自研薄渲染器 + zod）。
+
+---
+
+## 3. Pro 组件职责边界
+
+| 组件 | 内核 | 封装职责（只做这些） |
+|---|---|---|
+| `ProTable` | vxe-table | 搜索区 + 工具栏 + 分页契约 + 字典 + 权限 + 列设置持久化 + 状态矩阵 + 主题桥接 |
+| `ProForm` | @form-create/naive-ui | schema 约定 + zod 桥接 + 权限字段 + 布局预设 |
+| `ProModal` / `ProDrawer` | Naive | 与 ProForm 组合 + loading + 提交幂等 + 尺寸预设 |
+| `ProDescriptions` | Naive | 字段权限 + 字典翻译 + 布局 |
+| `ProUpload` | Uppy + tus | UI 外壳 + 业务字段 + 鉴权 + 租户路径 + 预览 |
+| `ProEditor` | Tiptap / wangEditor | 图片/附件对接 OSS + 服务端净化 + 主题 |
+| `ProTree` | Naive n-tree | 懒加载 + 拖拽 + 搜索 + 部门/菜单预设 |
+| `ProSearch` | form-create | 筛选条 + 折叠 + URL query 同步 |
+| `ProChart` | ECharts + vue-echarts | 自适应 + 主题联动 + 懒加载 |
+| `ProCron` | @vue-js-cron | 中文描述 + 校验 |
+| `ProLayout` | Naive 布局原子（**唯一必须自研**） | 侧边/顶栏/混合/分栏 + 标签栏 + 面包屑 + 移动端抽屉 |
+| `DictTag` / `DictSelect` | Naive | 字典联动 + 缓存 |
+| `IconPicker` | Naive + @vicons | 图标检索 + 预览 |
+| `ProExcel` | ExcelJS | 导入向导（模板下载 + 校验 + 错误行回写） |
+| `ProCommand` | VueUse + fuse.js | Cmd+K 命令面板 |
+| 状态矩阵 | Naive | `AppLoading` / `AppEmpty` / `AppError` / `AppSkeleton` / `AppDenied` |
+
+> `ProLayout` 是唯一"自研"的组件，但它是**布局编排**而非算法实现。
+
+**ProTable 明确不做**：不重写虚拟滚动、不重写编辑、不重写导出实现、不重写树形展开。
+
+---
+
+## 4. 明确「不封装」清单（避免过度封装）
+
+| 不封装 | 原因 |
+|---|---|
+| Naive 的按钮 / 输入框 / 下拉 | 直接透传，封装只增加心智负担与类型复杂度 |
+| ECharts 的配置项 | `option` 原样透传，不重定义 |
+| vxe-table 的编辑能力 | 原样使用，不改交互 |
+| dayjs / VueUse | 直接用 |
+| 布局栅格 | 直接用 `n-grid` |
+
+**原则：封装厚度 = 只在你需要「加约定」的地方。没有约定需求 → 不封装。**
+
+---
+
+## 5. 强行约束
+
+1. **新增 Pro 组件必须同时提交 Histoire story + 文档**，否则 PR 不通过
+2. 新组件必须先说明"社区为什么不行"，否则打回
+3. **禁止在 `@admin/ui` 里写业务逻辑** —— 业务逻辑属于 `apps/`
+4. 组件 props / 事件必须有完整 TS 类型，禁止 `any`
+5. 样式通过 Token 注入，**组件内不得硬编码颜色/间距**
+
+---
+
+## 6. 自研红线
+
+1. ❌ 自研表格（虚拟滚动、编辑、导出）
+2. ❌ 自研动态表单渲染引擎（用 form-create）
+3. ❌ 自研分片上传协议（用 tus）
+4. ❌ 自研富文本编辑器内核
+5. ❌ 自研图表库
+6. ❌ 自研流程设计器
+7. ❌ 自研日期库 / 工具库
+8. ❌ 在同一能力上同时引入两套方案

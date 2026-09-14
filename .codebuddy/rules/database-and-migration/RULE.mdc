@@ -1,0 +1,162 @@
+---
+description: 数据库与迁移规范：Flyway 命名与铁律、通用字段模板、多租户唯一索引、软删除与唯一索引冲突处理、索引规范与慢查询闭环、分区与归档。涉及建表、改表、写 SQL、写 Mapper 时应用。
+alwaysApply: false
+enabled: true
+provider:
+---
+
+# 数据库与迁移规范
+
+## 1. Flyway：唯一数据库变更入口
+
+```
+admin-bootstrap/src/main/resources/db/migration/
+├─ V1.0.0__init_schema.sql              # 全量初始化（仅首次）
+├─ V1.0.1__create_iam_tables.sql
+├─ V1.1.0__add_tenant_quota.sql
+├─ R__view_tenant_statistics.sql        # 可重复执行（视图/存储过程）
+└─ afterMigrate.sql                     # 回调：初始化平台级数据（幂等）
+```
+
+**命名**：`V{大版本}.{小版本}.{补丁}__{小写下划线描述}.sql`
+
+**铁律**：
+
+1. **已上线的迁移脚本永不修改，只追加**
+2. **不写 `down` 脚本** —— 回滚靠新增前向修复脚本，或备份恢复
+3. **DDL 与 DML 分离**脚本
+4. 每个脚本必须有明确且唯一的描述
+5. 存量库用 `baselineOnMigrate` 打基线，之后全部走 Flyway
+6. **CI 中必须跑 `flyway validate`**，防止有人偷改历史脚本
+7. 禁止在生产手工执行 SQL 后不补脚本
+
+---
+
+## 2. 通用字段模板（所有业务表必须包含）
+
+```sql
+id           BIGINT       NOT NULL COMMENT '主键（雪花/号段）',
+tenant_id    BIGINT       NOT NULL DEFAULT 0 COMMENT '租户ID，0=平台级',
+create_by    BIGINT       NULL     COMMENT '创建人',
+create_time  DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+update_by    BIGINT       NULL     COMMENT '更新人',
+update_time  DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+del_flag     TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除 0=正常 1=删除',
+version      INT          NOT NULL DEFAULT 0 COMMENT '乐观锁版本',
+remark       VARCHAR(500) NULL,
+PRIMARY KEY (id),
+KEY idx_tenant_del (tenant_id, del_flag)
+```
+
+## 3. 字段类型规范
+
+| 场景 | 类型 | 禁止 |
+|---|---|---|
+| 主键 | `BIGINT` 雪花 / 号段 | **自增**（多租户与分库演进需要全局有序 ID） |
+| 金额 | `DECIMAL(18,4)` | `FLOAT` / `DOUBLE` |
+| 时间 | `DATETIME(3)`，UTC 存储 | `TIMESTAMP`（2038 问题）、字符串存时间 |
+| 布尔 | `TINYINT(1)` | — |
+| 枚举 | `TINYINT` + 代码常量 | 存中文描述 |
+| 长文本 | `TEXT` | 过长 `VARCHAR` |
+| JSON | `JSON`（需索引则拆列） | 把关键查询字段塞 JSON |
+
+**其他要求**：
+
+- **字段注释必填** —— 代码生成器与元数据驱动依赖它
+- 表必须有注释与明确命名前缀（`iam_` / `org_` / `plt_` / `aud_` / `tls_` / `wf_`）
+- 字段名 `snake_case`，表名 `snake_case` 单数
+- 禁止 `is_` 前缀的空洞命名（`is_del` → `del_flag`）
+
+---
+
+## 4. 索引规范
+
+| 规则 | 说明 |
+|---|---|
+| **唯一索引必须带 `tenant_id`** ⚠️ | `UNIQUE KEY uk_tenant_username (tenant_id, username, del_flag)` —— 多租户项目最易漏的一条 |
+| 联合索引最左前缀 | 高频查询条件在前，区分度高在前 |
+| 索引数量 | 单表 ≤ 5 个（不含主键）；写多读少的表更少 |
+| 禁止冗余索引 | `(a)` 与 `(a,b)` 同时存在 → 删 `(a)` |
+| 覆盖索引 | 高频查询尽量让查询列全在索引中 |
+| 禁止函数包裹索引列 | `WHERE DATE(create_time) = ...` 会导致索引失效 |
+| 前缀索引 | 长字符串索引用前缀（`name(20)`） |
+| 外键 | **不建物理外键**，靠应用层与索引保证 |
+
+**CI 静态检查**：Flyway 脚本中检测无主键表、缺索引的高频查询列、大表全表扫描风险。
+
+---
+
+## 5. 逻辑删除与唯一索引的冲突 ⚠️
+
+`del_flag` 参与联合唯一时，无法支持"删除后重建同名"（因为 `(tenant_id, 'a', 1)` 只能有一条）。
+
+**两种方案（项目内统一，不得混用）**：
+
+| 方案 | 做法 | 特点 |
+|---|---|---|
+| **A（推荐）** | `del_flag` 存 `0` 或**删除时写入主键值** | 支持多次删除重建；索引仍有效 |
+| B | 应用层软删前做唯一性校验 | 实现简单，但并发下可能漏 |
+
+---
+
+## 6. 查询规范
+
+- **分页必须显式** —— 禁止无 `LIMIT` 的全表查询进生产
+- **禁止 `SELECT *`** —— 明确列出字段
+- 大表深分页用**游标分页**（`WHERE id > ? ORDER BY id LIMIT ?`）而非 `OFFSET` 大值
+- 批量操作分批（每批 ≤ 500 行），避免长事务与大 `IN`
+- **`IN` 参数个数上限 1000**，超出改用临时表或分批
+- 禁止在循环中查询（N+1）：改为批量查询 + 内存组装
+- 复杂动态 SQL 用 **XML Mapper**，不用注解拼接
+
+---
+
+## 7. 慢查询治理闭环
+
+```
+拦截（> 200ms 记录）
+  → 落库 slow_sql_log
+  → 聚合 TopN（按 SQL 指纹）
+  → 告警（> 1s）
+  → 治理看板
+  → 修复后回归验证
+```
+
+- 慢 SQL 阈值：**> 200ms 记录，> 1s 告警**
+- 上线前用**真实数据量级**验证关键查询（禁止在空表上测性能）
+
+---
+
+## 8. 分区与归档
+
+| 场景 | 策略 |
+|---|---|
+| 日志表（`aud_login_log` / `aud_operate_log`） | 按 `create_time` **RANGE 分区（月）** |
+| 历史数据 | N 个月前迁移至归档表 / 冷存储，提供归档任务与查询入口 |
+| 单表 > 1000 万行 | 分区 / 归档 / **按租户分片** 三选一（按数据特征决策） |
+| 读写分离 | 读走从库；**写后立即读走主库**（防主从延迟导致"刚保存就看不到"） |
+
+---
+
+## 9. 迁移脚本编写流程
+
+1. 评估：是否破坏性？是否需要数据回填？是否需要停机？
+2. 用**新增前向脚本**实现；大表加列注意 `ALGORITHM=INPLACE` / 分批回填
+3. **大表回填必须分批**，避免长事务锁表
+4. 在 test 环境用**生产数据量级**验证脚本耗时
+5. 提交时同步更新 `docs/` 数据模型说明
+
+---
+
+## 10. 数据库红线
+
+1. ❌ 修改已上线的 Flyway 脚本
+2. ❌ 手工执行 SQL 变更而不补脚本
+3. ❌ 唯一索引不带 `tenant_id`
+4. ❌ 用自增主键
+5. ❌ 金额用 `FLOAT` / `DOUBLE`
+6. ❌ 无 `LIMIT` 的全表查询
+7. ❌ `SELECT *`
+8. ❌ 循环内查询（N+1）
+9. ❌ 建物理外键
+10. ❌ 字段无注释

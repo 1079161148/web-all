@@ -1,0 +1,149 @@
+---
+description: 通用编码规范：命名、异常处理、日志、注释、参数校验、不可变性、提交与分支规范（Java + TypeScript + Vue 同时适用）。写任何代码时都应用。
+alwaysApply: true
+enabled: true
+provider:
+---
+
+# 通用编码规范
+
+## 1. 基本原则
+
+1. **不造轮子** —— 先查社区是否有成熟方案（见 `ui-component-policy`）；自研前必须说明为什么社区方案不可用
+2. **KISS / YAGNI** —— 不写"以后可能用到"的抽象；不为假想需求设计
+3. **DRY 但有度** —— 三处重复再抽象；过早抽象比重复更有害
+4. **单一职责** —— 一个类/函数只做一件事，函数目标 ≤ 50 行
+5. **显式优于隐式** —— 不要靠副作用传递数据
+6. **失败要快且明确** —— 非法状态立即抛异常，禁止静默吞掉
+7. **不可变优先** —— 能 `final` / `const` / `readonly` 就不留可变口子
+
+---
+
+## 2. 命名
+
+| 类型 | Java | TypeScript | 说明 |
+|---|---|---|---|
+| 类 / 类型 | `PascalCase` | `PascalCase` | 类型不加 `I` 前缀 |
+| 方法 / 函数 | `camelCase` | `camelCase` | 动词开头 |
+| 常量 | `SCREAMING_SNAKE_CASE` | `SCREAMING_SNAKE_CASE` | — |
+| 变量 | `camelCase` | `camelCase` | 禁止 `a` / `b` / `tmp` / `data1` |
+| 包 / 目录 | `lowercase.dotted` | `kebab-case` | — |
+| 布尔 | `is/has/can/should` 前缀 | 同左 | 禁止 `flag` |
+| 数据库表 / 列 | `snake_case` | — | 带上下文前缀（`iam_user`） |
+
+**禁止**：拼音命名、无意义缩写、`Utils` 大杂烩类、按数据来源命名（`List1` / `Data2`）。
+
+---
+
+## 3. 异常处理
+
+### 后端
+
+- **业务异常**统一用 `BizException(ErrorCode)`，`ErrorCode` 是枚举，**禁止抛裸 `RuntimeException` / `Exception`**
+- 全局 `@RestControllerAdvice` 统一处理；**Controller 内禁止 `try-catch` 后返回错误码**
+- 异常信息给用户看的部分必须友好且可操作（"用户名已存在" 而非 "Duplicate entry 'xxx'"）
+- **异常栈不得返回前端**；日志记录完整堆栈 + traceId
+- `catch` 块不得为空；不得 `catch (Exception e) {}` 吞掉
+- 事务内异常必须能触发回滚（继承 `RuntimeException` 或显式 `rollbackFor`）
+
+### 前端
+
+- 可预期的失败（网络、校验、业务码）用**返回值/状态**表达，不要抛异常
+- 不可预期的用异常，由全局 `errorHandler` + Sentry 兜底
+- `Promise` 不得裸奔：必须 `await` + `try-catch`，或交给 TanStack Query 处理
+- 错误提示必须可操作（说明原因 + 下一步），禁止只显示"操作失败"
+
+---
+
+## 4. 日志
+
+- 使用 **SLF4J**（`@Slf4j`），禁止 `System.out` / `printStackTrace()` / `console.log`
+- 日志级别：
+  - `ERROR` — 需要人工介入（仅这些才 error）
+  - `WARN` — 可自愈但异常（如重试成功）
+  - `INFO` — 关键业务节点（登录、重要写操作、任务开始/结束）
+  - `DEBUG` — 排查细节，**生产默认关闭**
+- **占位符而非字符串拼接**：`log.info("user {} created", userId)`
+- **禁止打印敏感信息**：密码、令牌、身份证、银行卡、手机号（脱敏后打印）
+- 异常日志必须带堆栈：`log.error("...", e)`，禁止 `log.error(e.getMessage())`
+- MDC 注入 `traceId` / `tenantId` / `userId`（框架层统一处理，业务代码不用手写）
+
+---
+
+## 5. 注释
+
+- **注释解释「为什么」，不解释「做什么」** —— 代码本身说明做什么
+- 公共 API（Service / 工具类 / 组件 props）必须有 JSDoc / Javadoc
+- 复杂业务规则、非直觉的取舍、临时绕过的原因 → **必须注释说明**
+- 禁止：被注释掉的死代码（用 git 历史）、无信息量的注释（`// 设置名字`）
+- **禁止在代码里写"接下来要做什么"的 TODO 而不建 issue** —— TODO 必须带 issue 链接
+- 注释语言：**中文**
+
+---
+
+## 6. 参数校验
+
+- **后端是最终防线**：所有外部输入（Controller 入参、配置、消息）必须校验
+- 用 Jakarta Validation 注解（`@NotNull` / `@Size` / `@Pattern`）+ 自定义校验器
+- **前端校验只是体验**，不得替代后端校验
+- 校验失败信息要具体（"用户名长度需 4-32 位" 而非 "参数错误"）
+- 校验规则与 OpenAPI 注解保持一致（契约优先，见 `api-contract-first`）
+
+---
+
+## 7. 依赖与工具
+
+- 禁止引入体积大 / 维护停滞 / 与现有方案重复的依赖
+- 优先选：维护活跃 + TS 类型完备 + 与 Vue3/JDK25 生态契合
+- **关键依赖必须有备选方案登记**（见设计文档 §15.6）
+- 时间用 `dayjs`（前端）/ `java.time`（后端），**禁止 `Date` / `SimpleDateFormat`**
+- 金额用 `BigDecimal`（后端）/ `decimal.js`（前端），**禁止 `float` / `double`**
+
+---
+
+## 8. 提交与分支规范
+
+### 提交信息（Conventional Commits，commitlint 校验）
+
+```
+<type>(<scope>): <subject>
+
+[body]
+
+[footer]
+```
+
+| type | 含义 |
+|---|---|
+| `feat` | 新功能 |
+| `fix` | 修复 |
+| `refactor` | 重构（不改行为） |
+| `perf` | 性能优化 |
+| `docs` | 文档 |
+| `test` | 测试 |
+| `build` / `ci` | 构建与流水线 |
+| `chore` | 杂项 |
+| `revert` | 回滚 |
+
+- `scope` 用模块名（`iam` / `pro-table` / `flyway`）
+- subject 用**中文**，动词开头，不超过 50 字，**末尾不加句号**
+- 破坏性变更加 `!` 并在 footer 写 `BREAKING CHANGE:`
+
+### 分支
+
+- **trunk-based**：短分支（≤ 3 天），及时合并主干
+- 命名：`feat/iam-tenant-quota`、`fix/pro-table-column-setting`
+- 定期 release 分支承载发布
+
+---
+
+## 9. 通用红线
+
+1. ❌ 提交不通过 lint / 测试 / 架构校验的代码
+2. ❌ 提交注释掉的死代码、调试语句、临时 TODO（无 issue 链接）
+3. ❌ 吞掉异常或空 `catch`
+4. ❌ 在日志/异常响应中泄露敏感信息
+5. ❌ 硬编码密钥、密码、内网地址、绝对路径（走配置或环境变量）
+6. ❌ 修改已上线的 Flyway 迁移脚本
+7. ❌ 未经确认擅自 `git commit` / `git push`
+8. ❌ 跳过 git hooks（`--no-verify`）

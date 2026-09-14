@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  租户 Mapper。
+
+  设计要点：
+  1. count 与 list 共用 <sql id="pageConditions">，从结构上保证二者过滤条件永远一致 ——
+     这是设计文档 §7.3 反复强调的分页错乱问题最有效的防御手段（不靠人记住）。
+  2. 列名显式列出，禁止 SELECT *（设计文档 §9.6 查询规范）。
+  3. 排序字段走白名单 choose，禁止把用户输入直接拼进 SQL。
+  4. del_flag = 0 必须显式书写：MyBatis-Plus 的 @TableLogic 只作用于 BaseMapper
+     自动生成的 SQL，对自定义 XML 无效 —— 这是极易漏掉的一点。
+  5. iam_tenant 在租户拦截器的忽略名单中（租户列表本身是平台级功能），
+     因此本查询不加 tenant_id 条件；这属于显式放行的跨租户场景。
+-->
+<mapper namespace="com.webadmin.infrastructure.persistence.mapper.TenantMapper">
+
+    <sql id="baseColumns">
+        t.id,
+        t.code,
+        t.name,
+        t.status,
+        t.plan_code,
+        t.plan_name,
+        t.remaining_users,
+        t.remaining_storage_bytes,
+        t.remaining_api_calls,
+        t.expire_time,
+        t.remark,
+        t.create_time
+    </sql>
+
+    <sql id="pageConditions">
+        <where>
+            t.del_flag = 0
+            <if test="q.code != null and q.code != ''">
+                AND t.code LIKE CONCAT('%', #{q.code}, '%')
+            </if>
+            <if test="q.name != null and q.name != ''">
+                AND t.name LIKE CONCAT('%', #{q.name}, '%')
+            </if>
+            <if test="q.status != null">
+                AND t.status = #{q.status}
+            </if>
+            <if test="q.planCode != null and q.planCode != ''">
+                AND t.plan_code = #{q.planCode}
+            </if>
+            <if test="q.createdFrom != null">
+                AND t.create_time &gt;= #{q.createdFrom}
+            </if>
+            <if test="q.createdTo != null">
+                AND t.create_time &lt;= #{q.createdTo}
+            </if>
+        </where>
+    </sql>
+
+    <!--
+      分页查询：只写条件与排序，不写 LIMIT。
+      LIMIT 由 PaginationInnerInterceptor 改写（它是拦截器链中的最后一环，
+      因此 count 语句同样会带上租户与数据权限条件）。
+    -->
+    <select id="selectPageByQuery" resultType="com.webadmin.infrastructure.persistence.po.TenantPO">
+        SELECT
+        <include refid="baseColumns"/>
+        FROM iam_tenant t
+        <include refid="pageConditions"/>
+        ORDER BY
+        <choose>
+            <when test="q.sortField == 'code'">t.code</when>
+            <when test="q.sortField == 'name'">t.name</when>
+            <when test="q.sortField == 'status'">t.status</when>
+            <when test="q.sortField == 'expireTime'">t.expire_time</when>
+            <when test="q.sortField == 'createTime'">t.create_time</when>
+            <!-- 白名单未命中时回退到默认排序，绝不拼接用户输入 -->
+            <otherwise>t.create_time</otherwise>
+        </choose>
+        <choose>
+            <when test="q.sortOrder != null and q.sortOrder.toLowerCase() == 'asc'">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>
+    </select>
+
+    <!-- 与 list 共用 pageConditions，保证总数与列表口径一致 -->
+    <select id="countByQuery" resultType="long">
+        SELECT COUNT(1)
+        FROM iam_tenant t
+        <include refid="pageConditions"/>
+    </select>
+
+    <!-- 创建租户时的唯一性校验；跨租户查询，不含 tenant_id 条件 -->
+    <select id="selectByCode" resultType="com.webadmin.infrastructure.persistence.po.TenantPO">
+        SELECT
+        <include refid="baseColumns"/>
+        FROM iam_tenant t
+        WHERE t.del_flag = 0
+          AND t.code = #{code}
+        LIMIT 1
+    </select>
+
+</mapper>

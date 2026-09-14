@@ -1,0 +1,28 @@
+{
+  "name": "@admin/admin",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "中台主应用",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit -p tsconfig.json && vite build",
+    "build:only": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@admin/api": "workspace:*",
+    "@admin/theme": "workspace:*",
+    "@admin/ui": "workspace:*",
+    "@tanstack/vue-query": "^5.102.8",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "vite": "^8.3.0",
+    "vue-tsc": "^3.3.11"
+  }
+}

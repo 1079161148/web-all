@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.webadmin</groupId>
+        <artifactId>admin-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>admin-domain</artifactId>
+    <name>admin-domain</name>
+    <description>领域层：聚合根 / 值对象 / 领域事件 / 仓储接口（零框架依赖）</description>
+
+    <!--
+      ★ 设计文档 §4.3 硬性约束：本模块不得依赖 Spring / MyBatis / Jakarta。
+      仅依赖 admin-common（同样零框架），以及编译期 Lombok。
+      ArchUnit 规则 ArchitectureTest#domain_should_not_depend_on_framework 会强制校验。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-common</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

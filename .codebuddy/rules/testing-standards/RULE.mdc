@@ -1,0 +1,154 @@
+---
+description: 测试规范：四层测试金字塔（ArchUnit 架构测试 / 单元 / Testcontainers 集成 / Playwright E2E）、必测清单（领域不变量、多租户隔离、拦截器顺序、幂等、令牌吊销）、命名与 AAA 结构、覆盖率要求。写测试或实现新功能时应用。
+alwaysApply: false
+enabled: true
+provider:
+---
+
+# 测试规范
+
+## 1. 测试金字塔
+
+| 层级 | 工具 | 覆盖目标 | 占比 |
+|---|---|---|---|
+| **架构测试** | **ArchUnit** + Spring Modulith `ApplicationModules.verify()` | ① `domain` 不依赖框架 ② 依赖方向正确 ③ 模块边界未被穿透 ④ 命名规范统一 | — |
+| **单元测试** | JUnit 5 + AssertJ + Mockito | **领域模型：聚合不变量、状态机、值对象 → 必须 100%** | 60% |
+| **集成测试** | Spring Boot Test + **Testcontainers**（MySQL + Redis + MinIO 真实容器） | Repository、拦截器链、事务、事件、权限 | 30% |
+| **契约测试** | `openapi-diff` + 生成客户端编译通过 | 前后端契约一致性 | — |
+| **E2E** | Playwright | 登录 → 菜单 → CRUD → 导出 全链路 | 10% |
+
+**禁止用 H2 替代 MySQL** —— 行为不一致会"测了个假的"。统一用 Testcontainers。
+
+---
+
+## 2. 必测清单（不可妥协）
+
+| # | 必测项 | 说明 |
+|---|---|---|
+| 1 | **领域聚合的所有不变量与状态流转** | 含**非法流转必须抛异常**（如 `PENDING → CLOSED` 被拒） |
+| 2 | **多租户隔离** | A 租户绝对读不到 B 租户数据 —— 含**缓存、文件、异步**三个穿透场景 |
+| 3 | **数据权限 + 分页拦截器执行顺序** | 断言 `count` 与 `list` 结果一致（顺序错误的典型症状） |
+| 4 | **幂等注解在并发下的正确性** | 并发调用只成功一次 |
+| 5 | **令牌吊销后旧 token 立即失效** | — |
+| 6 | **字段权限** | 无权限角色拿不到敏感字段；**导出同样生效** |
+| 7 | **水平越权** | 用 A 租户身份按 ID 访问 B 租户资源必须失败 |
+| 8 | **乐观锁冲突** | 并发更新抛异常而非静默覆盖 |
+
+---
+
+## 3. 架构测试（必须存在）
+
+```java
+@AnalyzeClasses(packages = "com.xxx.admin")
+class ArchitectureTest {
+
+    @ArchTest
+    static final ArchRule domain_should_not_depend_on_framework =
+        noClasses().that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("org.springframework..", "com.baomidou..", "jakarta.persistence..");
+
+    @ArchTest
+    static final ArchRule domain_should_be_isolated =
+        noClasses().that().resideInAPackage("..domain..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("..application..", "..infrastructure..", "..interfaces..");
+
+    @ArchTest
+    static final ArchRule application_should_not_depend_on_infrastructure =
+        noClasses().that().resideInAPackage("..application..")
+            .should().dependOnClassesThat().resideInAPackage("..infrastructure..");
+}
+```
+
+**按复杂度分级校验**：L1/L2 模块（支撑域 CRUD）不强制 DDD 分层，避免规则被"注释掉"。
+
+---
+
+## 4. 命名与结构
+
+### 命名
+
+| 类型 | 约定 | 示例 |
+|---|---|---|
+| 单元测试类 | `{被测类}Test` | `TenantTest` |
+| 集成测试类 | `{被测类}IT` | `UserRepositoryIT` |
+| E2E | `{流程}.spec.ts` | `user-crud.spec.ts` |
+| 测试方法 | `should_{期望行为}_when_{条件}` | `should_throw_when_transit_from_closed_to_active` |
+
+### 结构（AAA）
+
+```java
+@Test
+void should_reject_activation_when_tenant_is_closed() {
+    // Arrange
+    Tenant tenant = TenantFixture.aClosedTenant();
+
+    // Act & Assert
+    assertThatThrownBy(() -> tenant.activate(Clock.systemUTC()))
+        .isInstanceOf(IllegalTenantStateException.class);
+}
+```
+
+- 一个测试只验证**一个行为**
+- 测试之间**完全独立**，不依赖执行顺序
+- 用**测试数据构造器 / Fixture**，禁止在测试里堆 50 行准备代码
+- 断言库统一 AssertJ（可读性优于 JUnit 原生）
+
+---
+
+## 5. 测试数据
+
+- **禁止在测试中依赖生产数据**
+- Fixture / Builder 模式构造测试对象，语义化命名（`aClosedTenant()`）
+- Testcontainers **单例容器**（`@Testcontainers` + static），避免每个测试类重启容器
+- 集成测试每个用例后清理数据（`@Transactional` 回滚 或 显式清理）
+
+---
+
+## 6. 覆盖率
+
+| 模块 | 目标 |
+|---|---|
+| `domain`（聚合 / 值对象 / 领域服务） | **≥ 90%**，核心不变量 **100%** |
+| `application` | ≥ 70% |
+| `infrastructure` | ≥ 50%（关键：拦截器、仓储实现） |
+| `interfaces`（Controller） | 由集成测试覆盖，不单独追求行覆盖 |
+| 前端 `@admin/ui` | ≥ 70% |
+| 前端 `apps/` | 关键流程由 E2E 覆盖 |
+
+**覆盖率是下限而非目标** —— 不为凑数字写无断言测试。
+
+---
+
+## 7. 前端测试
+
+| 层级 | 工具 | 覆盖 |
+|---|---|---|
+| 单元 | **Vitest 4 + Vue Test Utils** | 工具函数、hooks、Pro 组件行为 |
+| 组件 | Vitest + Histoire 交互测试 | 组件 props 分支、事件、插槽 |
+| E2E | **Playwright** | 登录、菜单、CRUD、导出、权限可见性 |
+| a11y | **`@axe-core/playwright`** | 关键页面无严重无障碍问题 |
+| 基准 | Vitest `bench` | 表格渲染性能（对比基线，退化 > 15% 失败） |
+
+```ts
+// E2E 示例：验证权限可见性
+test('普通用户看不到删除按钮', async ({ page }) => {
+  await loginAs(page, 'normal-user')
+  await page.goto('/users')
+  await expect(page.getByRole('button', { name: '删除' })).toHaveCount(0)
+})
+```
+
+---
+
+## 8. 测试红线
+
+1. ❌ 无测试的核心域变更（聚合不变量、权限、租户隔离）
+2. ❌ 用 H2 / Mock 数据库替代 Testcontainers 做集成测试
+3. ❌ 用 `@Disabled` / `@Ignore` 长期屏蔽失败的测试而不建 issue
+4. ❌ 测试之间互相依赖执行顺序或共享可变状态
+5. ❌ 断言 `assertNotNull` 了事（必须断言**具体业务结果**）
+6. ❌ 为提升覆盖率写无断言的测试
+7. ❌ 新增接口 / 页面无任何测试覆盖
+8. ❌ 修改权限或租户逻辑而不补集成测试

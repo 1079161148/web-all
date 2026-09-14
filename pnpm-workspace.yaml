@@ -1,0 +1,28 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# 构建脚本放行决策（pnpm 11 的字段）。
+#
+# ⚠️ 这里必须给出明确值。若留成 pnpm 自动生成的占位文案
+#    （形如 `set this to true or false`），就等于"未决策"，
+#    pnpm 会把该依赖的构建脚本继续视为被忽略 ——
+#    而 `pnpm dev` 在启动前会做一次依赖校验，那次 install 因
+#    "存在被忽略的构建脚本"返回非 0，导致 dev 根本起不来，
+#    报错却是 ERR_PNPM_IGNORED_BUILDS，与"没批准构建"看起来是两回事。
+#
+# vue-demi 必须放行：它的 postinstall 会按当前安装的 Vue 版本
+# 切换导出入口（Vue 2 / Vue 3）。postinstall 未执行时，
+# pinia 等依赖它的库在运行期可能拿到错误的入口实现，
+# 表现为难以定位的运行时错误，而不是安装期报错。
+allowBuilds:
+  vue-demi: true
+
+# 允许执行「安装后构建脚本」的依赖白名单。
+#
+# pnpm 10+ 默认禁止依赖执行任意脚本（供应链安全考虑），需要显式放行。
+# 这里只放行确实需要编译原生/二进制产物的包，其余一律禁止 —— 这也是安全实践：
+# 白名单式放行比全局放开（dangerouslyAllowAllBuilds）安全得多。
+onlyBuiltDependencies:
+  - esbuild
+  - vue-demi

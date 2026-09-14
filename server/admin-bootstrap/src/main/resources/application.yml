@@ -1,0 +1,217 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: webadmin
+
+  # ------------------------------------------------------------------
+  # 本地开发覆盖文件：application-local.yml（已 gitignore，放个人数据库密码等）
+  # 文件不存在也不报错，等价于无覆盖 —— 所以可以安全地默认激活。
+  # 团队新成员只需从 application-local.yml.example 复制一份即可。
+  # ------------------------------------------------------------------
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  # ------------------------------------------------------------------
+  # 虚拟线程（设计文档 §16.3）
+  # 开启后 Tomcat 与 @Async 默认使用虚拟线程。
+  # ⚠️ 必读：开启后必须显式限制 HikariCP 连接池大小（见下方 datasource.hikari），
+  #    否则虚拟线程会把数据库连接打爆 —— 这是该特性最大的坑。
+  # ------------------------------------------------------------------
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    # ⚠️ 时区参数是关键，不要删：
+    #   connectionTimeZone=UTC + forceConnectionTimeZoneToSession=true
+    #   会把本连接的 MySQL 会话时区强制设为 UTC，使 DB 侧的 CURRENT_TIMESTAMP /
+    #   ON UPDATE CURRENT_TIMESTAMP 与应用侧写入的 Instant(UTC) 使用同一基准。
+    #
+    #   若不设置：MySQL 会话时区为 SYSTEM（本机为 UTC+8），则 Flyway 种子数据、
+    #   手工 SQL、DB 默认值写入的是本地时间，而应用写入的是 UTC —— 同一列里
+    #   混着两种基准，且不会报错，只会让时间排序与区间查询在某个时刻开始出错。
+    #   这是最典型、最难排查的一类时间错乱。本机实测确认过会话时区为 SYSTEM。
+    #
+    # 说明：Connector/J 8.0.23+ 已用 connectionTimeZone 取代旧参数 serverTimezone。
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:webadmin}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # ★ 关键配置：虚拟线程数量 ≠ 数据库连接数。
+      # 不设上限时，并发请求数会被放大到远超数据库承载能力。
+      # 起始值建议 = CPU 核数 * 2 + 磁盘数，再按压测结果调整（设计文档 §12.8）
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: WebAdminHikariPool
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      password: ${REDIS_PASSWORD:}
+      # 统一使用 String 序列化，避免 JDK 序列化导致的跨版本不兼容与可读性问题
+      timeout: 3000ms
+
+  # ------------------------------------------------------------------
+  # 数据库迁移：唯一变更入口（设计文档 §9.1）
+  # 已上线的脚本永不修改，只追加；CI 中必须执行 flyway validate
+  # ------------------------------------------------------------------
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    out-of-order: false
+
+    # 是否在「库非空但无迁移历史」时自动打基线（用于把存量库接入 Flyway）
+    baseline-on-migrate: true
+
+    # ⚠️ 必须是 0，不能是默认值 1 —— 这是一个实测踩到的隐蔽坑：
+    #
+    #   Flyway 的版本比较会**忽略尾随的 0**，即 `1` == `1.0` == `1.0.0`。
+    #   而第一个迁移脚本按我们的命名规范叫 `V1.0.0__...`。
+    #   若 baselineVersion 取默认值 1，则 `V1.0.0` 与基线「相等」→ 被判定为已应用 → **静默跳过**。
+    #   现象：应用正常启动、Flyway 也正常执行并输出了日志，但表根本没建出来，
+    #        接口报「Table 'xxx' doesn't exist」，极容易误判为脚本路径或版本号写错。
+    #
+    #   触发条件很苛刻，因此更难发现：只有当【库非空】且【还没有迁移历史】时才会出现。
+    #   本例正是被 Modulith 先行创建的 event_publication 表触发的。
+    #   在完全干净的库上首跑不会复现 —— 也就是说，本地第一次能跑通、CI 上却挂了。
+    #
+    #   设为 0 后，`V1.0.0 > 0` 成立，迁移正常执行；同时仍保留接入存量库的能力。
+    baseline-version: 0
+
+  # ------------------------------------------------------------------
+  # Spring Modulith 事务性 Outbox（设计文档 §4.7）
+  # 保证「业务落库成功才投递事件」，投递语义为 at-least-once
+  # ------------------------------------------------------------------
+  modulith:
+    events:
+      jdbc:
+        # ⚠️ 开发期自动建 event_publication 表。
+        # 生产环境应改为由 Flyway 管理该表（更可控、可审计），
+        # 届时应把此处置为 false 并补一个 V 脚本。
+        schema-initialization:
+          enabled: true
+
+  # ------------------------------------------------------------------
+  # JSON 序列化
+  #
+  # ⚠️ Spring Boot 4.0 已从 Jackson 2 升级到 **Jackson 3**（包名 com.fasterxml.jackson → tools.jackson）。
+  #    迁移时踩到两个坑（实测）：
+  #    ① SerializationFeature.WRITE_DATES_AS_TIMESTAMPS 在 Jackson 3 中**已被移除**
+  #       —— Jackson 3 默认就输出 ISO-8601，无需再关闭
+  #       配置它会直接导致启动失败：No enum constant ...SerializationFeature.write-dates-as-timestamps
+  #    ② 因此这里只保留确实存在的项，其余交给默认值。
+  #
+  #    补充：Jackson 3 的 Feature 枚举值也变了（如不再有 WRITE_DATES_AS_TIMESTAMPS），
+  #    后续若要细化 JSON 行为，请以 spring-configuration-metadata 列出的有效值为准。
+  # ------------------------------------------------------------------
+  jackson:
+    default-property-inclusion: non_null
+
+# ------------------------------------------------------------------
+# MyBatis-Plus
+# ------------------------------------------------------------------
+mybatis-plus:
+  # 自定义 XML 的位置（复杂动态 SQL 走 XML，简单的走 BaseMapper）
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    # 数据库 snake_case 列 → Java camelCase 字段，必须开启
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    call-setters-on-nulls: true
+  global-config:
+    banner: false
+    db-config:
+      logic-delete-field: delFlag
+      # ⚠️ 删除时把 del_flag 写成**本行自己的 id**，而不是固定的 1。
+      #
+      # 为什么：唯一索引包含 del_flag（如 `(tenant_id, username, del_flag)`）。
+      # 若删除固定写 1，则同一个 username 只能被软删除一次 —— 员工离职（删 admin_demo）
+      # 后重新入职（再建 admin_demo）时，第二次删除会撞唯一键。
+      # 写成各不相同的 id 后，唯一索引既能识别「未删除行」（del_flag=0），
+      # 又允许任意次「创建→删除」循环。
+      #
+      # 这里写的是 SQL 片段而非字面量：MyBatis-Plus 会把它直接内联进
+      # `SET del_flag=id`，MySQL 将 id 解析为列引用，取的正是被删那一行的主键。
+      # 因此配套要求：**所有 del_flag 列必须是 BIGINT**（雪花 id 19 位会撑爆 INT），
+      # 由 V1.0.1 的 ALTER 语句统一保证。
+      logic-delete-value: id
+      logic-not-delete-value: 0
+      id-type: input
+
+# ------------------------------------------------------------------
+# OpenAPI 契约（前后端契约的唯一来源，设计文档 §十）
+# ------------------------------------------------------------------
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    # 生产环境必须禁用（设计文档 §14.2）
+    enabled: true
+  default-produces-media-type: application/json
+
+# ------------------------------------------------------------------
+# 可观测性（设计文档 §13.1）
+# ------------------------------------------------------------------
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,flyway
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ------------------------------------------------------------------
+# 日志：MDC 携带 traceId / tenantId / userId，便于多租户排障
+# ------------------------------------------------------------------
+logging:
+  level:
+    root: INFO
+    com.webadmin: DEBUG
+    com.webadmin.infrastructure.persistence.mapper: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-}] [%X{tenantId:-}] %logger{36} - %msg%n"
+
+# ------------------------------------------------------------------
+# 业务配置
+# ------------------------------------------------------------------
+webadmin:
+  tenant:
+    # 平台级租户 ID（超管、平台数据）
+    platform-tenant-id: 0
+
+  security:
+    jwt:
+      # ⚠️ 生产必须通过环境变量 JWT_SECRET 覆盖。
+      # HS256 是对称算法 —— 能签名就能验签，因此密钥一旦泄露等同于可以伪造任意身份。
+      # 这里的默认值仅供本地开发，长度需 ≥ 32 字节（HS256 的硬性要求，不足会启动失败并给出明确提示）。
+      secret: ${JWT_SECRET:webadmin-local-dev-secret-key-change-me-32bytes}
+      # 有效期 30 分钟。选这个值的权衡：
+      #   太长 → 令牌泄露后的可利用窗口大；太短 → 前端频繁刷新，且权限变更的生效延迟感知更强
+      # 权限变更本身走 Redis 精确失效（不依赖令牌过期），因此这里可以放宽
+      access-token-ttl: PT30M
+      issuer: webadmin
+
+    password:
+      # BCrypt cost：10 约 50~100ms/次，是"对暴力破解有成本、对用户无感"的平衡点。
+      # 换更快的硬件后应上调（11 或 12），旧哈希会在用户下次登录时自动升级。
+      bcrypt-strength: 10
+
+    init-admin:
+      # 启动时创建超管账号（幂等：已存在则跳过，绝不重置密码）
+      enabled: true
+      tenant-id: 1
+      username: admin
+      # 生产必须覆盖。留空则用默认值，会在启动日志中明确提示修改
+      password: ${INIT_ADMIN_PASSWORD:Admin@123456}

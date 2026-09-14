@@ -1,0 +1,10 @@
+{
+  "name": "@admin/config",
+  "version": "0.0.1",
+  "private": true,
+  "description": "共享配置：TypeScript 基础配置（Lint 配置在仓库根 .oxlintrc.json，因为 oxlint 的 glob 相对配置文件所在目录解析）",
+  "type": "module",
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json"
+  }
+}

@@ -1,0 +1,116 @@
+---
+description: 项目全局上下文（必读）：项目定位、技术栈基线、目录结构、文档索引、8 条全局红线。任何任务开始前先应用本条。
+alwaysApply: true
+enabled: true
+provider:
+---
+
+# 项目全局上下文
+
+## 1. 项目定位
+
+企业级**多租户 SaaS 中台基座**（DDD 内核 + 契约优先 + 可插拔业务插件）。
+
+目标是同时在 **多租户、契约优先、Pro 组件层、可观测、测试体系** 五个维度超越市面 admin 产品（RuoYi / RuoYi-Vue-Plus / vue-pure-admin）。
+
+**这是长期演进的平台，不是一次性交付的脚手架。** 任何"临时绕过"的做法都必须先确认不会形成长期债务。
+
+---
+
+## 2. 技术栈基线
+
+> **不得擅自升降级或替换核心依赖。** 变更必须先记录 ADR 并获确认。
+
+### 后端
+
+| 项 | 版本 | 关键约束 |
+|---|---|---|
+| JDK | **25 LTS** | 虚拟线程 + ScopedValue + 结构化并发 |
+| Spring Boot | **4.0.x** | 基于 Spring Framework 7 |
+| Spring Modulith | 2.x | 模块边界 + 事务性 Outbox |
+| Spring Security / Authorization Server | 7.x | OAuth2.1 / OIDC，**禁止自研 JWT 体系** |
+| MyBatis-Plus | 适配 Boot 4 的版本 | 复杂查询用 XML，**不做 JPA** |
+| MySQL / Redis | 8.x / 7.x | — |
+| Flyway | 最新 | **唯一**数据库变更入口 |
+| MapStruct | 最新 | 领域对象 / PO / DTO 转换 |
+| 测试 | JUnit 5 + AssertJ + Testcontainers + ArchUnit | 四层测试 |
+| 可观测 | Micrometer + OTel + OTLP | 禁止直接绑厂商 Agent |
+
+### 前端
+
+| 项 | 版本 | 关键约束 |
+|---|---|---|
+| Vue | 3.5.x | `<script setup>` + TS；Vapor Mode 待 UI 库适配后再评估 |
+| Vite | **8.x**（Rolldown） | 单一引擎 |
+| TypeScript | 5.x | **`strict: true` 不得关闭** |
+| Naive UI | 2.44+ | **仅提供基础元素** |
+| vxe-table | 4.x | 复杂表格内核 |
+| form-create | v3（`@form-create/naive-ui`） | 动态表单 + 设计器内核 |
+| 状态 | Pinia（仅客户端） + TanStack Query（服务端） | 严格分工 |
+| 包管理 | pnpm 10 + workspace + Turborepo | — |
+| 校验 | zod | **由 OpenAPI 生成，禁止手写** |
+| 测试 | Vitest 4 + Playwright | — |
+| Lint | Oxlint + Stylelint + Prettier | Oxlint 在前 |
+
+---
+
+## 3. 目录结构
+
+```
+web-all/
+├─ docs/                       # 文档站（VitePress）+ ADR
+├─ apps/
+│  └─ admin/                   # 前端主应用
+├─ packages/
+│  ├─ ui/                      # ★ 唯一允许 import 第三方 UI 库的地方
+│  ├─ api/                     # ★ 契约生成产物
+│  ├─ theme/                   # Design Token 唯一来源
+│  ├─ plugins/                 # 约定式插件
+│  └─ utils/ hooks/ directives/ locales/ config/
+├─ scripts/
+│  ├─ generators/              # plop 页面/模块生成器
+│  └─ codemod/                 # 升级器
+└─ server/                     # 后端 Maven 多模块
+   ├─ admin-common/
+   ├─ admin-domain/            # ★ 零框架依赖
+   ├─ admin-application/
+   ├─ admin-infrastructure/
+   ├─ admin-interfaces/
+   ├─ admin-bootstrap/         # main + Flyway 脚本
+   └─ admin-test-support/
+```
+
+---
+
+## 4. 文档索引（需要细节时按需读取，不要凭记忆猜测）
+
+| 文档 | 内容 |
+|---|---|
+| `后台管理系统功能设计方案.md` | **唯一权威设计文档**（v4.0，已合并历史 v1/v2/v3）。关键章节：§二 技术选型 / §四 后端 DDD 架构 / §五 功能模块清单 / §六 多租户 / §七 四维权限 / §八 认证授权 / §九 数据层 / §十 契约优先 / §十一 前端架构 / §十二 性能工程 / §十三 可观测与测试 / §十四 安全 / §十五 平台治理 / §十七 路线图 / §二十 坑位 / §二十一 P0 验证 |
+
+涉及具体设计细节时，**先读取对应文档章节再动手**，不要自行发明与文档冲突的方案。
+
+---
+
+## 5. 全局红线（违反即视为错误，必须立即纠正）
+
+1. **领域层零框架依赖** —— `admin-domain` 不得 import `org.springframework.*` / `com.baomidou.*` / `jakarta.persistence.*`
+2. **UI 库隔离** —— `apps/**` 不得直接 import `naive-ui` / `vxe-table` / `form-create`，只能 import `@admin/ui`
+3. **禁止手写接口类型** —— 前端请求与类型必须来自 `@admin/api` 生成产物
+4. **租户全链路** —— 任何数据访问、缓存 Key、文件路径、异步任务、MQ 消息都必须携带 `tenantId`
+5. **权限后端兜底** —— 前端权限控制只影响体验，后端必须独立鉴权，**任何新增写接口必须加权限注解**
+6. **状态分工** —— 服务端数据不得放入 Pinia，必须用 TanStack Query
+7. **数据库变更必须走 Flyway** —— 禁止手工执行 SQL、禁止修改已上线的迁移脚本
+8. **不擅自引入新依赖/新技术栈** —— 引入前先确认社区成熟方案（见 `ui-component-policy`），并记录 ADR
+
+---
+
+## 6. 复杂度分级（选择合适的工作模式）
+
+| 模式 | 适用 | 要求 |
+|---|---|---|
+| **L1 简单模式** | 支撑域 CRUD（字典、公告、配置） | 代码生成器 + 事务脚本 + Pro 组件 |
+| **L2 标准模式** | 常规业务模块 | 契约优先 + Pro 组件 + 页面模板 |
+| **L3 严格模式** | 核心域（租户/权限/计费/流程） | DDD 聚合 + 领域事件 + 领域服务，需架构评审 |
+
+**动手前先判断属于哪一级**，不要对简单 CRUD 套用 L3 复杂度，也不要把 L3 的规则放松成 L1。

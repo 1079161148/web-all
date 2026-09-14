@@ -1,0 +1,67 @@
+# =====================================================================
+# 行尾与二进制处理
+#
+# 必须现在设定的原因：**这份配置只对「之后提交的内容」生效**。
+# 它不会回溯修正已经入库的文件 —— 要修就得做一次全库 renormalize
+# （git add --renormalize .），那会产生一个"所有文件都变了"的巨大提交。
+# 首次提交正是成本为零的唯一时机。
+#
+# 本项目是 Windows 开发 + Linux CI 的组合，这正是行尾问题最容易咬人的场景：
+#
+#   ① 可执行脚本的 shebang 会被 CRLF 破坏：
+#      "#!/usr/bin/env node" 变成 "#!/usr/bin/env node\r"
+#      Linux/WSL/git-bash 下报 "/usr/bin/env: 'node\r': No such file or directory"
+#      —— 报错里完全看不出是行尾问题，只会让人怀疑 node 没装
+#
+#   ② 同一个文件被不同编辑器写入不同行尾时，每次提交都会显示"整文件重写"，
+#      diff 失去可读性，代码评审被迫跳过真正的改动
+#
+#   ③ CI 上写的文件与本地不同，导致"本地能跑、CI 报语法错"
+# =====================================================================
+
+# 默认：仓库内统一存 LF，检出时由 git 按平台决定工作区行尾
+* text=auto
+
+# ---- 可执行脚本：强制 LF，两个方向都不转换 ----
+# eol=lf 表示"检出到工作区也用 LF"，而不只是"入库时转成 LF"。
+# 这对 .mjs 是必需的：Windows 上通过 git-bash / WSL 执行时同样要求 LF。
+*.sh    text eol=lf
+*.bash  text eol=lf
+*.mjs   text eol=lf
+*.js    text eol=lf
+*.cjs   text eol=lf
+*.ts    text eol=lf
+*.vue   text eol=lf
+
+# ---- 配置与契约：强制 LF，避免"只有行尾变化"的假 diff ----
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.xml   text eol=lf
+*.sql   text eol=lf
+*.md    text eol=lf
+pnpm-lock.yaml text eol=lf
+
+# ---- 二进制：禁止任何行尾/编码转换 ----
+# 少了这一段，git 可能对图片或字体做"文本"处理，导致文件损坏 ——
+# 而且损坏是静默的（git 不报错，只在别处看到图片打不开）。
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.svg   text eol=lf
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.jar   binary
+*.xlsx  binary
+*.pdf   binary
+
+# ---- 生成产物不参与 diff 统计 ----
+# 它们是机器生成的，在 PR 里逐行展开只会淹没真正需要人工看的改动。
+# 注意：依然会正常提交与版本控制（CI 需要校验它们与契约一致），
+#      只是不在 diff 里逐行显示 —— 「不显示」不等于「不提交」。
+packages/api/src/generated/** linguist-generated=true
+packages/api/openapi.json     linguist-generated=true
+pnpm-lock.yaml                linguist-generated=true

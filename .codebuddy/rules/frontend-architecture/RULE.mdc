@@ -1,0 +1,163 @@
+---
+description: 前端架构规范：pnpm Monorepo 结构、UI 库隔离层、状态管理分工（Pinia vs TanStack Query）、动态路由装配、Naive UI 使用约束、目录与命名约定。写前端 Vue/TS 代码、新建页面或组件时应用。
+alwaysApply: true
+enabled: true
+provider:
+---
+
+# 前端架构规范
+
+## 1. Monorepo 结构
+
+```
+web-all/
+├─ pnpm-workspace.yaml
+├─ turbo.json                    # 任务编排与缓存
+├─ apps/
+│  └─ admin/                     # 主应用
+│     └─ src/
+│        ├─ api/                 # 仅业务组合逻辑；基础请求来自 @admin/api
+│        ├─ layouts/             # 侧边栏 / 头部 / 标签栏 / 主区域
+│        ├─ router/              # 静态白名单 + 动态路由装配
+│        ├─ stores/              # Pinia：仅客户端状态
+│        ├─ views/               # 页面
+│        └─ main.ts
+└─ packages/
+   ├─ ui/                        # ★ 唯一允许 import 第三方 UI 库的地方
+   │  ├─ src/components/pro-*/   # Pro 组件（薄封装）
+   │  ├─ src/components/app-*/   # 状态矩阵五件套
+   │  ├─ src/adapters/           # 内核适配层（naive / vxe / form-create）
+   │  └─ stories/                # Histoire stories
+   ├─ api/                       # ★ 契约生成产物（禁止手改）
+   ├─ theme/                     # Design Token 唯一来源
+   ├─ plugins/                   # 约定式插件
+   ├─ utils/ hooks/ directives/ locales/ config/
+```
+
+**依赖方向**：`apps/*` → `packages/*`。**`packages` 之间不得循环依赖。**
+
+---
+
+## 2. UI 库隔离层（最重要的架构约束）
+
+> **Naive UI 的维护方为社区项目，迭代节奏与生态广度不及 Element Plus。** 隔离层是"UI 库可替换"的保险绳。
+
+**强制规则**：
+
+| 位置 | 允许 import |
+|---|---|
+| `packages/ui/**` | ✅ 可以 import `naive-ui` / `vxe-table` / `form-create` |
+| `apps/**` 与 `packages/**`（除 `ui`） | ❌ **只能 import `@admin/ui`**，禁止直接 import 第三方 UI 库 |
+
+**后果**：业务代码只写 `import { ProTable, ProForm } from '@admin/ui'`。`@admin/ui` 对外暴露**自有设计系统 API**，内部实现可替换。
+
+**校验**：Oxlint 规则禁止 `apps/**` import 上述库，CI 违规即失败。
+
+### UI 库职责边界（不可错配）
+
+| 层 | 由谁负责 | 例子 |
+|---|---|---|
+| **基础元素** | Naive UI | 按钮、输入框、下拉、弹窗、抽屉、提示、标签、栅格 |
+| **重能力组件** | **专业社区库** | 复杂表格 → vxe-table；动态表单 → form-create；上传 → Uppy；富文本 → Tiptap |
+| **业务抽象** | `@admin/ui` | 只做组合、约定、DX、主题桥接 |
+
+**不要把重能力期望压在 Naive UI 上**（如用 `n-data-table` 承载复杂表格、用 `n-form` 实现 schema 驱动动态表单）。
+
+---
+
+## 3. 状态管理分工（纠正最常见的架构误用）
+
+| 状态类型 | 归属 | 示例 |
+|---|---|---|
+| **服务端状态** | **TanStack Query** | 用户列表、字典、菜单、详情、统计 |
+| **客户端状态** | **Pinia** | 主题/暗色、布局偏好、标签页（TagsView）、当前用户会话、侧边栏折叠 |
+| **URL 状态** | **Vue Router query** | 筛选条件、页码（让列表页可分享、可刷新恢复） |
+
+**红线**：把服务端数据放进 Pinia 会导致手写缓存失效、并发去重、loading/error、重试 —— 每写一个页面重复一遍。**禁止。**
+
+---
+
+## 4. 数据请求
+
+- **禁止手写接口类型与请求函数** → 使用 `@admin/api` 的 OpenAPI 生成产物
+- 列表分页请求统一走生成的分页 hook，类型与后端 `PageResult` 严格对齐
+- 缓存失效在 mutation 的 `onSuccess` 中显式声明（invalidate 相关 query key）
+- 禁止在 `onMounted` 里裸调 fetch 而绕过 query 缓存
+
+```ts
+// ✅ 正确
+import { useGetUserPage, useCreateUser } from '@admin/api'
+const { data, isLoading } = useGetUserPage(params)
+```
+
+---
+
+## 5. 动态路由装配
+
+- 后端返回**菜单树**，前端 `router.addRoute` 注册；**菜单绝不硬编码**
+- `component` 字段存字符串路径，用 `import.meta.glob('@/views/**/*.vue')` 建映射表查表
+- 刷新后从 `sessionStorage` 恢复菜单树，避免闪烁与 404
+
+```ts
+router.beforeEach(async (to) => {
+  if (whiteList.includes(to.path)) return true
+  if (!userStore.token) return { path: '/login', query: { redirect: to.fullPath } }
+
+  if (!permissionStore.isLoaded) {
+    const menus = await permissionStore.fetchMenus()
+    buildRoutes(menus).forEach((r) => router.addRoute(r))
+    return { ...to, replace: true }   // ★ 必须 replace 重新匹配，否则首次进入 404
+  }
+  return true
+})
+```
+
+---
+
+## 6. Naive UI 使用约束与已知坑
+
+| 项 | 约束 |
+|---|---|
+| **消息/弹窗 API** | `useMessage` / `useDialog` / `useNotification` **必须在 provider 内调用**。脱离 setup 的场景走 `packages/ui` 暴露的全局单例适配器，禁止各处自己 `createDiscreteApi` |
+| **样式** | Naive 是 CSS-in-JS，无 CSS 文件引入；注意首屏 FOUC 与大列表渲染开销，按设计文档 §12.3 处理 |
+| **国际语言** | Naive 无内置 i18n → 在 `n-config-provider` 注入 `locale` / `dateLocale`，文案来自 `packages/locales` |
+| **主题** | 主题定制只能通过 `themeOverrides`，值必须来自 `@admin/theme` 的 Token，**禁止硬编码颜色/间距** |
+| **图标** | 使用 `@vicons/*`；动态菜单图标通过 `import.meta.glob` 动态解析，禁止写死 import 列表 |
+| **表格热路径** | 表格单元格内**禁止放 Naive 组件**（性能），用轻量 `span` + 类名或 vxe-table 自渲染 |
+
+---
+
+## 7. 样式与主题
+
+- **Design Token 唯一来源**：`packages/theme/tokens.ts`，输出 CSS Variables + Naive `themeOverrides`
+- **禁止硬编码颜色、间距、圆角、字号、阴影** —— 必须引用 Token 或设计系统变量
+- 原子化样式用 UnoCSS；复杂组件样式用 `<style scoped lang="scss">`
+- 支持暗色模式：Token 双套值，**不得写 `if (isDark)` 分支调样式**
+- 单文件组件样式顺序：布局 → 盒模型 → 文本 → 视觉
+
+---
+
+## 8. 命名与文件约定
+
+| 类型 | 约定 | 示例 |
+|---|---|---|
+| 组件文件 | PascalCase | `ProTable.vue` |
+| 组合式函数 | camelCase + `use` 前缀 | `useTableHeight.ts` |
+| 目录 | kebab-case | `user-management/` |
+| 常量 | SCREAMING_SNAKE_CASE | `DEFAULT_PAGE_SIZE` |
+| 类型/接口 | PascalCase，**不加 `I` 前缀** | `ProColumn` |
+| Pinia store | `useXxxStore` | `usePermissionStore` |
+| 事件 | kebab-case | `@row-click` |
+
+---
+
+## 9. 前端红线
+
+1. ❌ `apps/**` 直接 import `naive-ui` / `vxe-table` / `form-create`
+2. ❌ 手写接口类型或请求函数
+3. ❌ 服务端数据放入 Pinia
+4. ❌ 硬编码颜色 / 间距 / 字号（不走 Token）
+5. ❌ 菜单硬编码（必须由后端菜单树驱动）
+6. ❌ 用 `any` 绕过类型（必要时用 `unknown` + 类型守卫）
+7. ❌ 在组件内直接 `fetch` 绕过 TanStack Query
+8. ❌ 新增 Pro 组件不写 Histoire story 与文档

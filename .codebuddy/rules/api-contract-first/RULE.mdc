@@ -1,0 +1,96 @@
+---
+description: 契约优先规范：后端 OpenAPI 是前后端接口的唯一来源，前端类型/请求/校验 schema 全部自动生成，禁止手写。涉及新增或修改接口、前后端联调、DTO 变更时应用。
+alwaysApply: true
+enabled: true
+provider:
+---
+
+# 契约优先规范（Contract-First）
+
+## 1. 核心原则
+
+> **后端 OpenAPI 是前后端接口定义的唯一来源。**
+> 前端**不得**手写接口类型、请求函数、校验规则。
+
+这是本项目相对竞品（RuoYi / vue-pure-admin 全部手写请求与类型）的核心工程化差异。
+
+---
+
+## 2. 流水线
+
+```
+① 后端写 Controller（springdoc 注解完备）
+        ↓
+② 构建期产出 openapi.json（作为构建产物，禁止手工维护）
+        ↓
+③ 提交 / 发布到 packages/api/openapi.json
+        ↓
+④ 前端 pnpm gen:api（orval）
+        ↓
+⑤ packages/api/src/generated/ 生成：
+     ├─ types.gen.ts      # 全部 DTO → TS interface
+     ├─ schemas.gen.ts    # → Zod schema（运行时校验 + 表单校验来源）
+     ├─ endpoints.gen.ts  # → API 函数
+     └─ queries.gen.ts    # → TanStack Query hooks
+        ↓
+⑥ 业务代码 import { useGetUserPage } from '@admin/api'
+```
+
+**`packages/api/src/generated/**` 是生成产物，禁止手工修改。** 任何修改都会在下次生成时被覆盖。
+
+---
+
+## 3. 后端职责
+
+- Controller 必须有完备的 springdoc 注解：`@Operation`、`@Parameter`、`@Schema`
+- **DTO 必填性必须准确表达**（`@NotNull` / `@NotBlank` 会体现在 OpenAPI 里）
+- 字段说明（`@Schema(description = ...)`）即前端提示文案来源，**必须写**
+- 统一响应体 `R<T>` 与分页 `PageResult<T>` 的包装由框架统一处理，业务 Controller 不重复包装
+- 枚举值必须有 `description`，否则前端无法生成下拉选项
+- 敏感字段（密码、令牌）加 `@Schema(hidden = true)`
+
+---
+
+## 4. 前端职责
+
+| 允许 | 禁止 |
+|---|---|
+| import 生成产物 | 手写 `interface UserVO { ... }` |
+| 在生成产物上做薄组合（业务逻辑） | 手写 `axios.get('/api/user/list')` |
+| 用生成的 Zod schema 做表单校验 | 手写一套与后端不一致的校验规则 |
+| 在 `apps/admin/src/api/` 写业务组合逻辑 | 在 `apps/admin/src/api/` 重复定义类型 |
+
+**表单校验的唯一来源**：后端 OpenAPI → Zod schema → ProForm 自动推导规则。这样前后端校验规则天然一致。
+
+---
+
+## 5. CI 门禁（必须实现）
+
+| 门禁 | 作用 |
+|---|---|
+| `flyway validate` | 防止偷改历史迁移脚本 |
+| `openapi-diff baseline.json current.json --fail-on-breaking` | **后端删字段 / 改类型 / 改必填性 → 流水线直接失败**，强制前后端沟通 |
+| `pnpm gen:api && git diff --exit-code packages/api/src/generated` | 防止生成产物未同步提交（前后端用不同版本） |
+| `tsc --noEmit` | 契约变更在前端**编译期**暴露 |
+
+---
+
+## 6. 破坏性变更处理流程
+
+1. 判断是否真为破坏性：删字段、改类型、改必填性、改枚举取值、改路径 → **是**
+2. 优先采用**兼容方案**：新增字段而非修改、废弃而非删除、扩展枚举而非替换
+3. 必须破坏时：
+   - 提前一个 minor 版本发 deprecation 警告
+   - 与前端同步更新并跑通 `openapi-diff`
+   - 在 CHANGELOG 与迁移指南中记录
+
+---
+
+## 7. 收益（为什么必须坚持）
+
+- 后端改字段 → 前端**编译期直接报错**，而不是上线后才发现 `undefined`
+- 分页 / 筛选 / 排序参数全部有类型提示
+- 新接口零手写成本
+- 前后端字段漂移问题被结构性消除
+
+**如果发现自己在手写接口类型，说明流程走错了 —— 应该先补后端的 OpenAPI 注解。**

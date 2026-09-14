@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.webadmin</groupId>
+        <artifactId>admin-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>admin-application</artifactId>
+    <name>admin-application</name>
+    <description>应用层：AppService 编排、命令/查询对象、DTO、事务边界</description>
+
+    <!--
+      ★ 设计文档 §4.3：application 层禁止依赖 infrastructure。
+      这里只引入 spring-context / spring-tx（@Service / @Transactional），
+      不引入 spring-boot-starter-web，不引入任何持久化实现。
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.webadmin</groupId>
+            <artifactId>admin-common</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-core</artifactId>
+        </dependency>
+
+        <!--
+          领域事件的跨模块订阅入口：@ApplicationModuleListener
+          （等价于 @TransactionalEventListener(AFTER_COMMIT) + @Async，
+           并由 Spring Modulith 包装为「事务性 Outbox」——事件先与业务同事务落库，
+           提交后再投递，保证 at-least-once）
+
+          ⚠️ 注解位于 spring-modulith-events-api（包 org.springframework.modulith.events），
+          **不是** spring-modulith-api —— 实测确认，仅凭名字容易引错模块。
+
+          为什么放在 application 层：事件处理器属于「应用编排」职责，
+          它需要与事务边界对齐，但不属于领域规则，也不属于基础设施实现。
+        -->
+        <dependency>
+            <groupId>org.springframework.modulith</groupId>
+            <artifactId>spring-modulith-events-api</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

@@ -1,0 +1,116 @@
+# =====================================================================
+# 本项目（webadmin）的本地开发依赖
+#
+# 启动 / 停止：
+#   docker compose up -d redis            # 只起 Redis（P0 需要）
+#   docker compose --profile storage up -d  # 加上 MinIO（P1 需要对象存储时）
+#   docker compose --profile fullstack up -d  # 加上独立 MySQL（不用本机原生 MySQL 时）
+#   docker compose down                   # 停止（加 -v 连同数据卷一起删）
+#
+# ⚠️ 为什么所有端口都不是默认值：
+#   本机同时跑着其他项目（如 E:\front-backend-web\ecommerce）的容器与原生服务：
+#     3306 → 原生 MySQL 8.4（服务名 MySQL84）
+#     6379 → ecommerce 项目的 redis 容器
+#     6380 → 原生 Windows Redis 8.8（服务名 Redis）
+#   如果本项目也用默认端口，会直接端口冲突起不来；更糟的是「侥幸起来了」
+#   却和别的项目共用同一个 Redis —— 数据互相覆盖，而且极难排查。
+#   因此本项目使用独立端口 + 独立容器名 + 独立数据卷，与任何其他项目完全隔离。
+#
+# 服务名（顶层 name）同样重要：它决定容器名前缀（webadmin-redis-1），
+# 也决定 docker compose ls 里的项目名，避免和别人的项目混在一起。
+# =====================================================================
+
+name: webadmin
+
+services:
+
+  # ------------------------------------------------------------------
+  # Redis：令牌存储 / 权限缓存 / 限流 / 分布式锁（P1 起真正使用）
+  # 端口 6381：避开 6379（ecommerce）与 6380（原生）
+  # ------------------------------------------------------------------
+  redis:
+    image: redis:8-alpine
+    container_name: webadmin-redis
+    restart: unless-stopped
+    # appendonly yes：开启 AOF 持久化。令牌与缓存虽然可重建，
+    # 但本地开发时容器重启导致登录态全丢会很烦；AOF 成本极低。
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - '6381:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ------------------------------------------------------------------
+  # MinIO：对象存储（S3 协议）。P1 做文件上传时启用。
+  # 生产环境通过 S3 协议抽象切换到 OSS / COS（设计文档 §2.1）。
+  # ------------------------------------------------------------------
+  minio:
+    # ⚠️ 固定具体版本再上生产；latest 会让环境不可复现
+    image: minio/minio:latest
+    container_name: webadmin-minio
+    restart: unless-stopped
+    profiles: ['storage', 'fullstack']
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'   # S3 API
+      - '9001:9001'   # 控制台 http://localhost:9001
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ------------------------------------------------------------------
+  # MySQL：仅在不想用本机原生 MySQL 时启用（profile=fullstack）
+  # 端口 3307：避开原生的 3306
+  # ------------------------------------------------------------------
+  mysql:
+    image: mysql:8.4
+    container_name: webadmin-mysql
+    restart: unless-stopped
+    profiles: ['fullstack']
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: webadmin
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      # 与应用侧保持同一时间基准（设计文档 §9.2）。
+      # 应用已通过 connectionTimeZone=UTC 强制会话时区，这里是双保险，
+      # 也让 DB 侧的 CURRENT_TIMESTAMP 默认值走 UTC。
+      - --default-time-zone=+00:00
+    ports:
+      - '3307:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-proot']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  redis-data:
+  minio-data:
+  mysql-data:

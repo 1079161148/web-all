@@ -1,0 +1,146 @@
+# =====================================================================
+# CI 门禁（设计文档 §13.2 / §10.2）
+#
+# 本流水线的目标不是"跑一下测试"，而是**把设计文档里的红线变成不可绕过的构建期断言**。
+# 因此每个 job 都对应一条明确的、曾经被破坏过的规则：
+#
+#   backend   ─ 领域单测 + 架构红线(ArchUnit) + 集成测试(Testcontainers) + 契约新鲜度
+#   frontend  ─ lint + 类型检查 + 构建
+#   contract  ─ 契约 → 前端客户端 的一致性（含"未提交的生成产物"这一 git diff 盲区）
+#
+# ⚠️ 每个 job 的 run 命令都必须与 scripts/verify-all.mjs 里 STEPS 的 command 保持一致。
+#    这是刻意的重复：门禁若只在 CI 上可跑，开发者就只能"推上去看 CI 报什么"，
+#    反馈周期变成一整个往返，久了就没人再本地跑了。
+#
+# ⚠️ 这些 job 应在 GitHub 分支保护里被设为 required status check，
+#    否则"CI 红了也能合并"——那门禁就只是个通知，不是门禁。
+# =====================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  # 允许手工触发：排查环境相关问题（如容器拉取失败）时很有用
+  workflow_dispatch:
+
+# 同一分支连续推送时取消上一次运行 ——
+# 否则排队中的旧运行会占用 runner，而它的结果已经没有意义了
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 server/pom.xml 的 <java.version> 保持一致。
+  # 改这里必须同步改那里，否则本地能编译、CI 编译不过（或反之）。
+  JAVA_VERSION: '25'
+  # 与根 package.json 的 engines.node 保持一致
+  NODE_VERSION: '22'
+
+jobs:
+  # -------------------------------------------------------------------
+  # 后端：单测 → 架构红线 → 集成测试 → 契约
+  #
+  # 顺序由 Maven 生命周期天然保证，且这个顺序是对的：
+  #   surefire(单测 + ArchUnit，秒级) 先跑，failsafe(集成测试，需起容器) 后跑。
+  #   最常见的失败（架构越界）能在几秒内反馈，不必等容器起来。
+  # -------------------------------------------------------------------
+  backend:
+    name: 后端门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          # 缓存 ~/.m2/repository。没有它，每次 CI 都要从中央仓库重新拉全量依赖
+          cache: maven
+
+      # `mvn verify` 会依次执行：
+      #   · enforcer  → 校验 JDK/Maven 版本（jar 已加，见 server/pom.xml 的说明）
+      #   · surefire  → TenantTest（领域单测）、ArchitectureTest（10 条架构红线）
+      #   · failsafe  → AuthAppServiceIT、ApiContractFreshnessIT
+      # 集成测试用 Testcontainers 起真实 MySQL 8.4 与 Redis 8 —— ubuntu-latest
+      # 自带 Docker，因此无需额外配置（刻意不用 H2，见 AbstractIntegrationTest 的说明）。
+      - name: 执行 mvn verify
+        working-directory: server
+        run: mvn -B verify
+
+      # 失败时把测试报告留下。没有这一步，排查只能靠翻 CI 日志，
+      # 而 JUnit 报告里的"哪个用例、哪条断言"才是真正需要的信息。
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: |
+            server/**/target/surefire-reports/
+            server/**/target/failsafe-reports/
+            server/admin-bootstrap/target/live-openapi.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # -------------------------------------------------------------------
+  # 前端：lint + 类型检查 + 构建
+  # -------------------------------------------------------------------
+  frontend:
+    name: 前端门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # 不指定 version：pnpm/action-setup 会读取根 package.json 的 packageManager 字段。
+      # 写死在这里就会多出一处需要同步的版本号，而两处漂移会导致
+      # "本地锁文件格式与 CI 不一致"这类难查的问题。
+      - uses: pnpm/action-setup@v4
+
+      - name: 安装 Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # --frozen-lockfile：CI 上绝不允许隐式更新锁文件。
+      # 否则 package.json 与 pnpm-lock.yaml 不一致时，CI 会"顺手"按 package.json 解析，
+      # 于是构建通过、但依赖版本与本地完全不同 —— 一个只在 CI 上出现的诡异 bug 源头。
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: lint + 类型检查 + 构建
+        run: pnpm verify
+
+  # -------------------------------------------------------------------
+  # 契约：openapi.json → 前端客户端
+  #
+  # 后端侧的"后端 → openapi.json"由 backend job 的 ApiContractFreshnessIT 保证；
+  # 这里保证"openapi.json → src/generated"，两段接起来才是完整闭环。
+  # -------------------------------------------------------------------
+  contract:
+    name: 契约一致性
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - name: 安装 Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 重新生成并比对。脚本同时检查两件事：
+      #   ① 有未跟踪的生成产物（git diff 看不见这类问题，必须单独查）
+      #   ② 已跟踪产物与重新生成的内容不一致
+      - name: 校验生成产物与契约一致
+        run: pnpm gen:check

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+
+  "plugins": ["eslint", "typescript", "import", "unicorn", "promise"],
+
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+
+  "rules": {
+    "no-console": "off",
+    "no-debugger": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-unused-vars": "off",
+    "typescript/no-explicit-any": "warn",
+    "unicorn/consistent-function-scoping": "off"
+  },
+
+  "overrides": [
+    {
+      "files": ["apps/**/*.ts", "apps/**/*.vue"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "naive-ui",
+                "message": "【架构红线】业务代码禁止直接引入 naive-ui。请从 @admin/ui 引入（基础元素已在 @admin/ui 中透传再导出）—— 否则 UI 库将无法替换（设计文档 §11.2）。"
+              },
+              {
+                "name": "vxe-table",
+                "message": "【架构红线】业务代码禁止直接引入 vxe-table。复杂表格请使用 @admin/ui 的 ProTable（设计文档 §11.2）。"
+              },
+              {
+                "name": "@form-create/naive-ui",
+                "message": "【架构红线】业务代码禁止直接引入 form-create。动态表单请使用 @admin/ui 的 ProForm（设计文档 §11.2）。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "packages/api/**/*.ts",
+        "packages/theme/**/*.ts",
+        "packages/utils/**/*.ts",
+        "packages/hooks/**/*.ts",
+        "packages/directives/**/*.ts",
+        "packages/locales/**/*.ts",
+        "packages/plugins/**/*.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "naive-ui",
+                "message": "【架构红线】除 @admin/ui 外，任何包都不得直接引入 naive-ui（设计文档 §11.2）。"
+              },
+              {
+                "name": "vxe-table",
+                "message": "【架构红线】除 @admin/ui 外，任何包都不得直接引入 vxe-table（设计文档 §11.2）。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
