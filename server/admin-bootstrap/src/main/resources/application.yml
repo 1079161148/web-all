@@ -48,7 +48,7 @@ spring:
     #   这是最典型、最难排查的一类时间错乱。本机实测确认过会话时区为 SYSTEM。
     #
     # 说明：Connector/J 8.0.23+ 已用 connectionTimeZone 取代旧参数 serverTimezone。
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:webadmin}?useUnicode=true&characterEncoding=utf8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:webadmin}?useUnicode=true&characterEncoding=utf8&sslMode=${DB_SSL_MODE:PREFERRED}&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
