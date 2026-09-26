@@ -88,9 +88,16 @@ public class SecurityConfig {
                     // 预检请求必须放行，否则浏览器端的跨域调用会在 OPTIONS 阶段就失败
                     auth.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
                     auth.requestMatchers(PUBLIC_ENDPOINTS.toArray(String[]::new)).permitAll();
-                    // 其余一律要求认证：这是 fail-closed 的默认值。
+                    // API 一律要求认证：这是 fail-closed 的默认值。
                     // 新增业务接口忘了加权限注解时，至少还有"必须登录"这一层兜底。
-                    auth.anyRequest().authenticated();
+                    auth.requestMatchers("/api/**").authenticated();
+                    // actuator 是运维端点，不在 /api 下，单独保护
+                    auth.requestMatchers("/actuator/**").authenticated();
+                    // 其余非 API 路径（SPA 静态件、前端入口与深链接）放行 ——
+                    // 后端托管前端（SpaWebConfig）后，页面级鉴权由前端路由守卫承担；
+                    // 这里若继续 anyRequest().authenticated()，访客打开站点会拿到
+                    // API 的 401 JSON 而不是登录页（实测踩过）
+                    auth.requestMatchers("/**").permitAll();
                 })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) ->
