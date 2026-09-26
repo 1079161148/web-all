@@ -24,13 +24,15 @@ RUN VITE_DEMO_MODE=true pnpm --filter @admin/admin build:only
 FROM maven:3.9-eclipse-temurin-25 AS server
 WORKDIR /build
 COPY server/pom.xml server/pom.xml
-# 各模块先拷 pom 与源码（模块结构见仓库；-am 会按依赖顺序构建）
+# 各模块先拷 pom 与源码（⚠️ 必须与聚合 pom 的 <modules> 一一对应，
+# 漏任何一个 reactor 都会解析失败：Could not find the selected project）
 COPY server/admin-common server/admin-common
 COPY server/admin-domain server/admin-domain
 COPY server/admin-application server/admin-application
 COPY server/admin-infrastructure server/admin-infrastructure
 COPY server/admin-interfaces server/admin-interfaces
 COPY server/admin-bootstrap server/admin-bootstrap
+COPY server/admin-test-support server/admin-test-support
 RUN mvn -B -q -DskipTests install -pl admin-bootstrap -am
 
 # ---- 阶段 3：运行时（前端静态件 + 后端 jar 同容器）----
