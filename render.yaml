@@ -21,6 +21,16 @@ services:
     plan: free
     healthCheckPath: /api/v1/auth/captcha
     envVars:
+      # ---- Render 端口探测 ----
+      # Render 默认探测 PORT env 指定的端口（缺省 10000），应用监听 8080 ——
+      # 不声明它，日志会反复出现 "No open ports detected" 且服务被判不健康
+      - key: PORT
+        value: "8080"
+      # ---- Redis 超时（免费层冷启动窗口内 3s 默认值不够）----
+      - key: REDIS_TIMEOUT
+        value: 10s
+      - key: REDIS_CONNECT_TIMEOUT
+        value: 10s
       # ---- Spring 静态托管指向容器内的前端产物 ----
       - key: APP_WEB_STATIC_LOCATION
         value: file:/app/static/

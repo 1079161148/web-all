@@ -72,8 +72,11 @@ spring:
       # 托管型 Redis（Upstash 等）强制 TLS；本地默认关闭（本地 Redis 无 TLS）
       ssl:
         enabled: ${REDIS_SSL:false}
-      # 统一使用 String 序列化，避免 JDK 序列化导致的跨版本不兼容与可读性问题
-      timeout: 3000ms
+      # ⚠️ 超时不能太紧：托管 Redis 首次连接要完成 DNS + TCP + TLS 握手 + AUTH，
+      # 免费层冷启动窗口内 3 秒会被掐断（实测 Render 部署报
+      # "Connection initialization timed out after 3 second(s)"）
+      timeout: ${REDIS_TIMEOUT:10s}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:10s}
 
   # ------------------------------------------------------------------
   # 数据库迁移：唯一变更入口（设计文档 §9.1）
