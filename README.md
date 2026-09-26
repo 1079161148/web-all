@@ -18,6 +18,12 @@ DDD 分层内核、契约优先的前后端协作、可执行的质量门禁。�
 | 可观测 | 前端错误上报、接口耗时采集、后端审计日志（落库+查询） |
 | 工程演示页 | 大文件上传（分片+断点+Worker 哈希）、协同编辑（OT）、审批流设计器（Vue Flow）、监控大屏（ECharts）、实时日志 |
 
+「亮点演示 → 技术专题」把直播、转码、流程设计器等领域的线上问题复盘与设计决策固化成团队可复用的文档页：
+
+![技术专题：WebRTC 线上问题复盘](docs/images/showcase-live.png)
+
+![技术专题：复杂流程设计器的难点与最佳实践](docs/images/showcase-topics.png)
+
 ## 技术栈与选型理由
 
 ### 后端
@@ -139,7 +145,9 @@ pnpm install
 pnpm dev
 ```
 
-打开 <http://localhost:5173>，本地开发态登录页已预填种子账号 `admin / Admin@123456`（密码可用 `VITE_DEV_LOGIN_PASSWORD` 覆盖），输入验证码即可进入。
+打开 <http://localhost:5173>，本地开发态登录页已预填种子账号 `admin / Admin@123456`（密码可用 `VITE_DEV_LOGIN_PASSWORD` 覆盖），输入验证码即可进入：
+
+![登录页](docs/images/login.png)
 
 - 接口文档：<http://localhost:8080/swagger-ui.html>
 - 健康检查：<http://localhost:8080/actuator/health>
