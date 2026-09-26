@@ -1,0 +1,16 @@
+# 构建上下文瘦身：这些永远不进镜像
+.git
+.github
+.dsh
+.codebuddy
+node_modules
+**/node_modules
+**/target
+**/dist
+apps/admin/test-results
+playwright-report
+*.log
+*.rdb
+Dockerfile
+docker-compose.yml
+render.yaml

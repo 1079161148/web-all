@@ -69,6 +69,9 @@ spring:
       port: ${REDIS_PORT:6379}
       database: 0
       password: ${REDIS_PASSWORD:}
+      # 托管型 Redis（Upstash 等）强制 TLS；本地默认关闭（本地 Redis 无 TLS）
+      ssl:
+        enabled: ${REDIS_SSL:false}
       # 统一使用 String 序列化，避免 JDK 序列化导致的跨版本不兼容与可读性问题
       timeout: 3000ms
 

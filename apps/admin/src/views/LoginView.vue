@@ -39,32 +39,42 @@ const authStore = useAuthStore()
 const permissionStore = usePermissionStore()
 
 /**
- * 本地开发用的登录预填。
+ * 登录预填：开发态与公开演示站共用同一机制。
  *
- * <h3>⚠️ 它不会进入生产产物 —— 而且这不依赖"上线前记得删"</h3>
- * 整个对象被 {@code import.meta.env.DEV} 包住。Vite 在构建时会把该表达式
- * <b>静态替换为 {@code false}</b>，于是三元表达式塌缩到空分支，
- * 摇树再把带凭据的那一支连同两个字符串一起消除。
- * 因此生产包里既没有账号也没有密码 —— <b>由构建机制保证，而不是靠纪律</b>。
+ * <h3>两个触发条件</h3>
+ * <ul>
+ *   <li>{@code import.meta.env.DEV} —— 本地开发（`pnpm dev`）；</li>
+ *   <li>{@code VITE_DEMO_MODE=true} —— <b>公开演示站</b>：部署到免费托管
+ *       （Render 等）供任何人体验时，构建时注入该变量，登录页预填
+ *       管理员账号。演示凭据本就公开（取后端种子账号默认值），预填
+ *       只是省掉访客"猜账号"这一步；验证码保留，防脚本刷库。</li>
+ * </ul>
+ *
+ * <h3>⚠️ 正式生产环境不要设 VITE_DEMO_MODE</h3>
+ * 不设时生产包里没有任何凭据 —— 由构建机制保证，而不是靠纪律。
  *
  * <h3>想换成别的账号</h3>
  * 在 {@code apps/admin/.env.local} 里覆盖
  * {@code VITE_DEV_LOGIN_USERNAME} / {@code VITE_DEV_LOGIN_PASSWORD} 即可
  * （该文件已在 .gitignore 中，不会入库）。
- *
- * <h3>默认值为什么可以用明文</h3>
- * 取的是<b>后端种子账号</b>（{@code INIT_ADMIN_PASSWORD} 的默认值）——
- * 它本来就在后端配置与迁移脚本里，这里没有新增任何秘密。
  */
-const DEV_PREFILL = import.meta.env.DEV
-  ? {
-      username: import.meta.env.VITE_DEV_LOGIN_USERNAME ?? 'admin',
-      password: import.meta.env.VITE_DEV_LOGIN_PASSWORD ?? 'Admin@123456'
-    }
+const PREFILL_CREDENTIALS = {
+  username: import.meta.env.VITE_DEV_LOGIN_USERNAME ?? 'admin',
+  password: import.meta.env.VITE_DEV_LOGIN_PASSWORD ?? 'Admin@123456'
+}
+const isPrefilled =
+  import.meta.env.DEV || import.meta.env.VITE_DEMO_MODE === 'true'
+const DEV_PREFILL = isPrefilled
+  ? PREFILL_CREDENTIALS
   : { username: '', password: '' }
 
-/** 是否处于"已预填"的开发态。仅用于显示一行提示，避免有人以为密码框有残留。 */
-const isDevPrefilled = import.meta.env.DEV
+/** 是否处于"已预填"态。仅用于显示一行提示，避免有人以为密码框有残留。 */
+const isDevPrefilled = isPrefilled
+
+/** 预填提示文案：演示站与本地开发措辞不同（受众一个是访客，一个是开发者）。 */
+const prefillHint = import.meta.env.VITE_DEMO_MODE === 'true'
+  ? '演示站点：已预填管理员账号，输入验证码后点登录'
+  : '本地开发：已预填种子账号，可直接点登录'
 
 /** 平台默认租户（种子租户，平台运营账号所在处）。 */
 const PLATFORM_TENANT_ID = '1'
@@ -191,7 +201,7 @@ async function handleSubmit(): Promise<void> {
         预填会被当成浏览器自动填充或"上一个人的残留"。
       -->
       <p v-if="isDevPrefilled" class="login__dev-hint">
-        本地开发：已预填种子账号，可直接点登录
+        {{ prefillHint }}
       </p>
 
       <!--

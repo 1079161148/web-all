@@ -1,0 +1,59 @@
+# Render Blueprint：一次提交描述整个部署。
+#
+# <h3>免费组合的分工</h3>
+#   · 本服务（Docker）：前端 dist + 后端 jar 同容器，Spring Boot 吐静态件
+#   · MySQL：TiDB Cloud Serverless（免费，MySQL 协议兼容）—— 在 render
+#     面板填它的连接参数（DB_*）
+#   · Redis：Upstash 免费层（TLS 强制，REDIS_SSL=true）
+#
+# <h3>sync: false 的含义</h3>
+# 值不在仓库里（凭据不该入库）—— 首次 `render blueprint launch` 时
+# Render 会在终端/面板逐项询问，填一次即保存到服务环境。
+#
+# <h3>免费层须知</h3>
+#   · 15 分钟无流量实例休眠，下一个请求冷启动约 30~60 秒（可接受再看）
+#   · 512MB 内存：JVM 已按容器内存 75% 封顶（见 Dockerfile）
+#   · 无持久磁盘：上传附件（data/uploads）在重启/重部署后清空
+services:
+  - type: web
+    name: webadmin-demo
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/v1/auth/captcha
+    envVars:
+      # ---- Spring 静态托管指向容器内的前端产物 ----
+      - key: APP_WEB_STATIC_LOCATION
+        value: file:/app/static/
+      # ---- MySQL（TiDB Cloud Serverless，面板填真实值）----
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "4000"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # ---- Redis（Upstash，TLS 强制）----
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        value: "6379"
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_SSL
+        value: "true"
+      # ---- 演示管理员初始密码（与前端预填一致）----
+      - key: INIT_ADMIN_PASSWORD
+        value: Admin@123456
+      # ---- AI 能力（可选：不填则 AI 对话不可用，其余功能正常）----
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      # ---- JVM 内存封顶（免费层 512MB）----
+      - key: JAVA_TOOL_OPTIONS
+        value: -XX:MaxRAMPercentage=75 -XX:+UseSerialGC -Xss512k
