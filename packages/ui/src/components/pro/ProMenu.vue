@@ -33,8 +33,9 @@ import ProIcon from './ProIcon.vue'
  * 折叠后宽度只有 64px，放不下文字，因此只渲染第一层：
  * <ul>
  *   <li>叶子 → 显示图标（无图标时取标题首字），点击直接导航；</li>
- *   <li>目录 → 点击<b>替用户选中其第一个叶子</b>（与顶栏 mix 模式同款策略 ——
- *       否则表现为"点了没反应"）。子级列表以弹出层呈现是后续增强，当前刻意不做。</li>
+ *   <li>目录 → <b>hover 弹出子菜单浮层</b>（NPopover，右侧展开整组叶子清单，
+ *       点叶子直达，激活项在浮层内高亮）。点击图标本体仍替用户选中
+ *       其第一个叶子（与顶栏 mix 模式同款策略）。</li>
  * </ul>
  */
 
@@ -138,6 +139,26 @@ function firstLeafKey(node: ProLayoutMenu): string {
   return current.key
 }
 
+/**
+ * 折叠浮层用的叶子清单：把一组菜单递归展平为可导航叶子。
+ * 浮层是平铺列表（浮层里再嵌展开/收起会超出 64px 侧栏的信息密度预算），
+ * 深层结构用层级缩进表达。
+ */
+function flattenLeaves(
+  node: ProLayoutMenu
+): Array<ProLayoutMenu & { depth: number }> {
+  const out: Array<ProLayoutMenu & { depth: number }> = []
+  const walk = (n: ProLayoutMenu, depth: number): void => {
+    if (n.children?.length) {
+      n.children.forEach((child) => walk(child, depth + 1))
+      return
+    }
+    out.push({ ...n, depth })
+  }
+  walk(node, 0)
+  return out
+}
+
 /** 折叠项是否应高亮：自身激活，或激活项在它的子树里。 */
 function isCollapsedActive(node: ProLayoutMenu): boolean {
   return node.key === props.activeKey || subtreeHas(node.children ?? [], props.activeKey)
@@ -156,19 +177,56 @@ const indentStyle = computed(() => ({
 <template>
   <!-- 折叠态（仅最外层）：只渲染第一层，无文字 -->
   <div v-if="collapsed && level === 0" class="pro-menu pro-menu--collapsed" role="menu">
-    <button
-      v-for="node in menus"
-      :key="node.key"
-      type="button"
-      class="pro-menu__item pro-menu__item--collapsed"
-      :class="{ 'pro-menu__item--active': isCollapsedActive(node) }"
-      :title="node.label"
-      :aria-label="node.label"
-      @click="handleSelect(firstLeafKey(node))"
-    >
-      <ProIcon v-if="node.icon" :name="node.icon" :size="18" />
-      <span v-else class="pro-menu__glyph">{{ node.label.slice(0, 1) }}</span>
-    </button>
+    <template v-for="node in menus" :key="node.key">
+      <!-- 目录：hover 弹出子菜单浮层（右侧展开整组叶子清单） -->
+      <n-popover
+        v-if="node.children?.length"
+        trigger="hover"
+        placement="right-start"
+        :show-arrow="false"
+      >
+        <template #trigger>
+          <button
+            type="button"
+            class="pro-menu__item pro-menu__item--collapsed"
+            :class="{ 'pro-menu__item--active': isCollapsedActive(node) }"
+            :aria-label="node.label"
+            @click="handleSelect(firstLeafKey(node))"
+          >
+            <ProIcon v-if="node.icon" :name="node.icon" :size="18" />
+            <span v-else class="pro-menu__glyph">{{ node.label.slice(0, 1) }}</span>
+          </button>
+        </template>
+        <div class="pro-menu__flyout" role="menu">
+          <div class="pro-menu__flyout-title">{{ node.label }}</div>
+          <button
+            v-for="leaf in flattenLeaves(node)"
+            :key="leaf.key"
+            type="button"
+            class="pro-menu__flyout-item"
+            :class="{ 'pro-menu__flyout-item--active': leaf.key === activeKey }"
+            :style="{ paddingLeft: `${12 + leaf.depth * 14}px` }"
+            role="menuitem"
+            @click="handleSelect(leaf.key)"
+          >
+            {{ leaf.label }}
+          </button>
+        </div>
+      </n-popover>
+      <!-- 叶子：点击直达 -->
+      <button
+        v-else
+        type="button"
+        class="pro-menu__item pro-menu__item--collapsed"
+        :class="{ 'pro-menu__item--active': isCollapsedActive(node) }"
+        :title="node.label"
+        :aria-label="node.label"
+        @click="handleSelect(node.key)"
+      >
+        <ProIcon v-if="node.icon" :name="node.icon" :size="18" />
+        <span v-else class="pro-menu__glyph">{{ node.label.slice(0, 1) }}</span>
+      </button>
+    </template>
   </div>
 
   <!-- 常规态：递归渲染 -->
@@ -313,6 +371,42 @@ const indentStyle = computed(() => ({
 
 .pro-menu__glyph {
   font-size: var(--wa-font-size-md, 14px);
+  font-weight: 600;
+}
+
+/* ---- 折叠态弹出浮层 ----
+   NPopover 会把内容 teleport 到 body，但元素仍带本组件的 scoped 标记，
+   因此这里的样式可以正常命中。配色走 Token，随主题切换。 */
+.pro-menu__flyout {
+  display: flex;
+  flex-direction: column;
+  min-width: 176px;
+}
+
+.pro-menu__flyout-title {
+  padding: 6px 12px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wa-text-secondary, #5c6570);
+}
+
+.pro-menu__flyout-item {
+  padding: 7px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pro-menu__flyout-item:hover {
+  background: var(--wa-bg-hover, #f0f3f7);
+}
+
+.pro-menu__flyout-item--active {
+  color: var(--wa-color-primary, #2563eb);
   font-weight: 600;
 }
 </style>
