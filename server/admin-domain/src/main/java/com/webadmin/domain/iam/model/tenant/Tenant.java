@@ -202,6 +202,27 @@ public class Tenant {
         this.quota = quota.consume(type, amount);
     }
 
+    /**
+     * 归还配额（用户被删除时调用）。
+     *
+     * <h3>⚠️ 为什么不做"不超过套餐初始配额"的钳制（曾在这里栽过）</h3>
+     * 聚合里还原出的 {@code plan} 是<b>持久化快照</b>：它的 initialQuota
+     * 是由当前剩余量推导的（见 {@code TenantConverter#toDomain} 的警告），
+     * 以它为上限，"剩余量 + 归还量 &gt; 剩余量"恒不成立 —— 归还永远被吞成 0，
+     * 表现为"删了人还是建不了新用户"（实测踩到）。
+     *
+     * <p>因此这里<b>按调用方给定的量如实归还</b>。真实上限的校正属于
+     * 「续期 / 更改套餐」动作（{@link #renew} 会用注册表里的真实套餐重置配额），
+     * 不该由一次删除悄悄吞掉。套餐降级后旧用户删除导致剩余量短暂偏高，
+     * 也在下一次续期时被校正 —— 这是可接受的取舍。
+     */
+    public void releaseQuota(QuotaType type, long amount) {
+        if (amount <= 0) {
+            return;
+        }
+        this.quota = quota.release(type, amount);
+    }
+
     // 说明：这里刻意<b>不提供</b> resetQuota() 方法。
     // 初看它很合理（月度 API 调用量归零），但存在一个隐蔽缺陷：
     // 从持久化还原时，plan 只由 planCode/planName 两列重建，其 initialQuota 是从

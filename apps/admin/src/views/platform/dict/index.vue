@@ -1,19 +1,9 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, h, ref } from 'vue'
-import {
-  NDrawer,
-  NDrawerContent,
-  NInput,
-  NInputNumber,
-  NModal,
-  NSelect,
-  NTag,
-  ProTable,
-  feedback
-} from '@admin/ui'
-import type { ProColumn, ProRowAction } from '@admin/ui'
+import { NDrawer, NDrawerContent, NTag, PageContainer, ProModal, ProTable, feedback } from '@admin/ui'
+import type { ProColumn, ProFormItem, ProRowAction } from '@admin/ui'
 import { useDict } from '@/composables/useDict'
-import DictTag from '@/components/DictTag.vue'
+import { DictTag } from '@admin/ui'
 import type { DictDataRequest, DictTypeRequest } from '@admin/api'
 import {
   createDictDataAction,
@@ -40,7 +30,7 @@ import {
  * "为什么这个租户的文案和别的不一样"会变成一个纯靠猜的问题。
  */
 
-const typeTableRef = ref<{ reload: (resetPage?: boolean) => void } | null>(null)
+const typeTableRef = ref<{ reload: () => void; refresh: () => void } | null>(null)
 const dicts = useDict('sys_status')
 
 interface DictTypeRow {
@@ -107,6 +97,29 @@ const typeRowActions: ProRowAction<DictTypeRow>[] = [
     onClick: (row) => openTypeForm(row)
   },
   {
+    key: 'toggleStatus',
+    // 文案跟当前状态走：启用中显示「禁用」（点是禁用），已禁用显示「正常」
+    label: (row) => (row.status === 'ACTIVE' ? '禁用' : '正常'),
+    permission: 'plt:dict:update',
+    confirm: (row) =>
+      row.status === 'ACTIVE'
+        ? `确定禁用字典「${row.dictName}」？禁用后其下所有字典项不再下发到前端，使用该字典的页面会拿不到选项。`
+        : `确定启用字典「${row.dictName}」？`,
+    onClick: async (row) => {
+      if (row.id === undefined) return
+      const next = row.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+      // 后端没有独立的改状态接口，按全量更新提交（其余字段原样带回，避免被覆盖成空）
+      await updateDictTypeAction(row.id, {
+        dictName: row.dictName ?? '',
+        dictType: row.dictType ?? '',
+        status: next,
+        remark: row.remark ?? ''
+      })
+      feedback.success(next === 'ACTIVE' ? `字典「${row.dictName}」已启用` : `字典「${row.dictName}」已禁用`)
+      typeTableRef.value?.refresh()
+    }
+  },
+  {
     key: 'delete',
     label: '删除',
     permission: 'plt:dict:delete',
@@ -117,20 +130,32 @@ const typeRowActions: ProRowAction<DictTypeRow>[] = [
       if (row.id === undefined) return
       await deleteDictTypeAction(row.id)
       feedback.success('字典类型已删除')
-      typeTableRef.value?.reload(false)
+      typeTableRef.value?.refresh()
     }
   }
 ]
 
 const typeFormVisible = ref(false)
-const typeSubmitting = ref(false)
 const typeEditingId = ref<number | null>(null)
-const typeForm = ref<DictTypeRequest>({ dictName: '', dictType: '', status: 'ACTIVE', remark: '' })
+const typeModalModel = ref<Record<string, unknown>>({})
+
+const typeFormItems: ProFormItem[] = [
+  { field: 'dictName', title: '字典名称', required: true, placeholder: '如 用户性别' },
+  {
+    field: 'dictType',
+    title: '类型编码',
+    required: true,
+    placeholder: '如 sys_user_sex',
+    tip: '小写字母开头，仅含小写字母、数字与下划线。代码里按它取字典，创建后不建议修改。'
+  },
+  { field: 'status', title: '状态', type: 'select', dict: 'sys_status', value: 'ACTIVE' },
+  { field: 'remark', title: '备注', type: 'textarea' }
+]
 
 function openTypeForm(row: DictTypeRow | null): void {
   if (row) {
     typeEditingId.value = row.id ?? null
-    typeForm.value = {
+    typeModalModel.value = {
       dictName: row.dictName ?? '',
       dictType: row.dictType ?? '',
       status: row.status ?? 'ACTIVE',
@@ -138,31 +163,24 @@ function openTypeForm(row: DictTypeRow | null): void {
     }
   } else {
     typeEditingId.value = null
-    typeForm.value = { dictName: '', dictType: '', status: 'ACTIVE', remark: '' }
+    typeModalModel.value = { status: 'ACTIVE' }
   }
   typeFormVisible.value = true
 }
 
-async function submitTypeForm(): Promise<void> {
-  if (!typeForm.value.dictName.trim() || !typeForm.value.dictType.trim()) {
-    feedback.warning('请填写字典名称与类型编码')
-    return
+async function submitTypeForm(values: Record<string, unknown>): Promise<void> {
+  const payload: DictTypeRequest = {
+    dictName: String(values.dictName ?? ''),
+    dictType: String(values.dictType ?? ''),
+    status: values.status ? String(values.status) : 'ACTIVE',
+    remark: values.remark ? String(values.remark) : ''
   }
-  typeSubmitting.value = true
-  try {
-    if (typeEditingId.value !== null) {
-      await updateDictTypeAction(typeEditingId.value, typeForm.value)
-    } else {
-      await createDictTypeAction(typeForm.value)
-    }
-    feedback.success('保存成功')
-    typeFormVisible.value = false
-    typeTableRef.value?.reload(false)
-  } catch (error) {
-    feedback.error(error instanceof Error ? error.message : '保存失败')
-  } finally {
-    typeSubmitting.value = false
+  if (typeEditingId.value !== null) {
+    await updateDictTypeAction(typeEditingId.value, payload)
+  } else {
+    await createDictTypeAction(payload)
   }
+  feedback.success('保存成功')
 }
 
 // ---------------------------------------------------------------------
@@ -172,7 +190,7 @@ async function submitTypeForm(): Promise<void> {
 const itemsVisible = ref(false)
 const itemsLoading = ref(false)
 const currentType = ref('')
-const itemTableRef = ref<{ reload: (resetPage?: boolean) => void } | null>(null)
+const itemTableRef = ref<{ reload: () => void; refresh: () => void } | null>(null)
 
 interface DictDataRow {
   id?: number
@@ -206,7 +224,7 @@ const fetchItemsForCurrentType = async (query: import('@admin/ui').ProTableQuery
 }
 
 const itemColumns: ProColumn<DictDataRow>[] = [
-  { key: 'dictLabel', title: '标签', minWidth: 130 },
+  { key: 'dictLabel', title: '标签', minWidth: 130, search: 'input', searchPlaceholder: '模糊匹配' },
   {
     key: 'dictValue',
     title: '键值',
@@ -228,6 +246,8 @@ const itemColumns: ProColumn<DictDataRow>[] = [
     key: 'status',
     title: '状态',
     width: 100,
+    search: 'select',
+    dict: 'sys_status',
     renderFn: (row) => h(DictTag, { dictType: 'sys_status', value: row.status })
   },
   {
@@ -241,6 +261,30 @@ const itemColumns: ProColumn<DictDataRow>[] = [
 const itemRowActions: ProRowAction<DictDataRow>[] = [
   { key: 'edit', label: '编辑', permission: 'plt:dict:update', onClick: (row) => openItemForm(row) },
   {
+    key: 'toggleStatus',
+    label: (row) => (row.status === 'ACTIVE' ? '禁用' : '正常'),
+    permission: 'plt:dict:update',
+    confirm: (row) =>
+      row.status === 'ACTIVE'
+        ? `确定禁用字典项「${row.dictLabel}」？禁用后该项不再出现在下拉与标签渲染中。`
+        : `确定启用字典项「${row.dictLabel}」？`,
+    onClick: async (row) => {
+      if (row.id === undefined) return
+      const next = row.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+      await updateDictDataAction(row.id, {
+        dictType: row.dictType ?? currentType.value,
+        dictLabel: row.dictLabel ?? '',
+        dictValue: row.dictValue ?? '',
+        sort: row.sort ?? 0,
+        cssClass: row.cssClass ?? 'default',
+        status: next,
+        remark: row.remark ?? undefined
+      })
+      feedback.success(next === 'ACTIVE' ? `字典项「${row.dictLabel}」已启用` : `字典项「${row.dictLabel}」已禁用`)
+      itemTableRef.value?.refresh()
+    }
+  },
+  {
     key: 'delete',
     label: '删除',
     permission: 'plt:dict:delete',
@@ -250,22 +294,14 @@ const itemRowActions: ProRowAction<DictDataRow>[] = [
       if (row.id === undefined) return
       await deleteDictDataAction(row.id)
       feedback.success('字典项已删除')
-      itemTableRef.value?.reload(false)
+      itemTableRef.value?.refresh()
     }
   }
 ]
 
 const itemFormVisible = ref(false)
-const itemSubmitting = ref(false)
 const itemEditingId = ref<number | null>(null)
-const itemForm = ref<DictDataRequest>({
-  dictType: '',
-  dictLabel: '',
-  dictValue: '',
-  sort: 0,
-  cssClass: 'default',
-  status: 'ACTIVE'
-})
+const itemModalModel = ref<Record<string, unknown>>({})
 
 /** 标签样式的可选项：与 NTag 的 type 白名单保持一致（避免配出无效样式）。 */
 const cssClassOptions = [
@@ -277,10 +313,19 @@ const cssClassOptions = [
   { label: '错误（红）', value: 'error' }
 ]
 
+const itemFormItems: ProFormItem[] = [
+  { field: 'dictType', title: '字典类型', disabled: true },
+  { field: 'dictLabel', title: '标签', required: true, placeholder: '展示给用户看的文案，如 正常' },
+  { field: 'dictValue', title: '键值', required: true, placeholder: '数据库存储的值，如 ACTIVE' },
+  { field: 'sort', title: '显示顺序', type: 'number', value: 0, props: { min: 0 } },
+  { field: 'cssClass', title: '标签样式', type: 'select', options: cssClassOptions, value: 'default' },
+  { field: 'status', title: '状态', type: 'select', dict: 'sys_status', value: 'ACTIVE' }
+]
+
 function openItemForm(row: DictDataRow | null): void {
   if (row) {
     itemEditingId.value = row.id ?? null
-    itemForm.value = {
+    itemModalModel.value = {
       dictType: row.dictType ?? currentType.value,
       dictLabel: row.dictLabel ?? '',
       dictValue: row.dictValue ?? '',
@@ -291,10 +336,8 @@ function openItemForm(row: DictDataRow | null): void {
     }
   } else {
     itemEditingId.value = null
-    itemForm.value = {
+    itemModalModel.value = {
       dictType: currentType.value,
-      dictLabel: '',
-      dictValue: '',
       sort: 0,
       cssClass: 'default',
       status: 'ACTIVE'
@@ -303,35 +346,27 @@ function openItemForm(row: DictDataRow | null): void {
   itemFormVisible.value = true
 }
 
-async function submitItemForm(): Promise<void> {
-  if (!itemForm.value.dictLabel.trim() || !itemForm.value.dictValue.trim()) {
-    feedback.warning('请填写标签与键值')
-    return
+async function submitItemForm(values: Record<string, unknown>): Promise<void> {
+  const payload: DictDataRequest = {
+    dictType: String(values.dictType ?? currentType.value),
+    dictLabel: String(values.dictLabel ?? ''),
+    dictValue: String(values.dictValue ?? ''),
+    sort: values.sort === undefined || values.sort === null ? 0 : Number(values.sort),
+    cssClass: values.cssClass ? String(values.cssClass) : 'default',
+    status: values.status ? String(values.status) : 'ACTIVE',
+    remark: values.remark ? String(values.remark) : undefined
   }
-  itemSubmitting.value = true
-  try {
-    if (itemEditingId.value !== null) {
-      await updateDictDataAction(itemEditingId.value, itemForm.value)
-    } else {
-      await createDictDataAction(itemForm.value)
-    }
-    feedback.success('保存成功')
-    itemFormVisible.value = false
-    itemTableRef.value?.reload(false)
-  } catch (error) {
-    feedback.error(error instanceof Error ? error.message : '保存失败')
-  } finally {
-    itemSubmitting.value = false
+  if (itemEditingId.value !== null) {
+    await updateDictDataAction(itemEditingId.value, payload)
+  } else {
+    await createDictDataAction(payload)
   }
+  feedback.success('保存成功')
 }
-
-const statusOptions = computed(() =>
-  dicts.sys_status.value.map((o) => ({ label: o.label, value: o.value }))
-)
 </script>
 
 <template>
-  <div class="dict-page">
+  <PageContainer title="字典管理" description="字典类型 + 字典项两级维护；支持平台默认与租户覆盖">
     <ProTable
       ref="typeTableRef"
       :columns="typeColumns"
@@ -342,92 +377,47 @@ const statusOptions = computed(() =>
       @create="openTypeForm(null)"
       @empty-action="openTypeForm(null)"
     />
+  </PageContainer>
 
-    <!-- 字典项抽屉 -->
-    <n-drawer v-model:show="itemsVisible" :width="860" placement="right">
-      <n-drawer-content :title="`字典项 — ${currentType}`" closable>
-        <ProTable
-          ref="itemTableRef"
-          :columns="itemColumns"
-          :request="fetchItemsForCurrentType"
-          :toolbar="['create', 'refresh']"
-          :row-actions="itemRowActions"
-          empty-action-text="为该字典添加第一项"
-          @create="openItemForm(null)"
-          @empty-action="openItemForm(null)"
-        />
-      </n-drawer-content>
-    </n-drawer>
+  <!-- 字典项抽屉：容器是"承载一张表"，不是表单，保留 NDrawer -->
+  <n-drawer v-model:show="itemsVisible" :width="860" placement="right">
+    <n-drawer-content :title="`字典项 — ${currentType}`" closable>
+      <ProTable
+        ref="itemTableRef"
+        :columns="itemColumns"
+        :request="fetchItemsForCurrentType"
+        :toolbar="['create', 'refresh']"
+        :row-actions="itemRowActions"
+        empty-action-text="为该字典添加第一项"
+        @create="openItemForm(null)"
+        @empty-action="openItemForm(null)"
+      />
+    </n-drawer-content>
+  </n-drawer>
 
-    <!-- 字典类型表单 -->
-    <n-modal v-model:show="typeFormVisible" preset="card"
-             :title="typeEditingId ? '编辑字典类型' : '新增字典类型'" style="width: 480px">
-      <div class="dict-page__form">
-        <div class="dict-page__field">
-          <label>字典名称 <span class="dict-page__required">*</span></label>
-          <n-input v-model:value="typeForm.dictName" placeholder="如 用户性别" />
-        </div>
-        <div class="dict-page__field">
-          <label>类型编码 <span class="dict-page__required">*</span></label>
-          <n-input v-model:value="typeForm.dictType" placeholder="如 sys_user_sex" />
-          <p class="dict-page__tip">
-            小写字母开头，仅含小写字母、数字与下划线。代码里按它取字典，创建后不建议修改。
-          </p>
-        </div>
-        <div class="dict-page__field">
-          <label>状态</label>
-          <n-select v-model:value="typeForm.status" :options="statusOptions" />
-        </div>
-        <div class="dict-page__field">
-          <label>备注</label>
-          <n-input v-model:value="typeForm.remark" type="textarea" :rows="2" />
-        </div>
-      </div>
-      <template #footer>
-        <div class="dict-page__footer">
-          <n-button @click="typeFormVisible = false">取消</n-button>
-          <n-button type="primary" :loading="typeSubmitting" @click="submitTypeForm">确定</n-button>
-        </div>
-      </template>
-    </n-modal>
+  <!-- 字典类型表单 -->
+  <ProModal
+    v-model:visible="typeFormVisible"
+    :title="typeEditingId !== null ? '编辑字典类型' : '新增字典类型'"
+    :items="typeFormItems"
+    :model="typeModalModel"
+    :cols="1"
+    :submit="submitTypeForm"
+    :on-success="() => typeTableRef?.refresh()"
+    @error="(error: unknown) => feedback.error(error instanceof Error ? error.message : '保存失败')"
+  />
 
-    <!-- 字典项表单 -->
-    <n-modal v-model:show="itemFormVisible" preset="card"
-             :title="itemEditingId ? '编辑字典项' : '新增字典项'" style="width: 480px">
-      <div class="dict-page__form">
-        <div class="dict-page__field">
-          <label>字典类型</label>
-          <n-input v-model:value="itemForm.dictType" disabled />
-        </div>
-        <div class="dict-page__field">
-          <label>标签 <span class="dict-page__required">*</span></label>
-          <n-input v-model:value="itemForm.dictLabel" placeholder="展示给用户看的文案，如 正常" />
-        </div>
-        <div class="dict-page__field">
-          <label>键值 <span class="dict-page__required">*</span></label>
-          <n-input v-model:value="itemForm.dictValue" placeholder="数据库存储的值，如 ACTIVE" />
-        </div>
-        <div class="dict-page__field">
-          <label>显示顺序</label>
-          <n-input-number v-model:value="itemForm.sort" :min="0" />
-        </div>
-        <div class="dict-page__field">
-          <label>标签样式</label>
-          <n-select v-model:value="itemForm.cssClass" :options="cssClassOptions" />
-        </div>
-        <div class="dict-page__field">
-          <label>状态</label>
-          <n-select v-model:value="itemForm.status" :options="statusOptions" />
-        </div>
-      </div>
-      <template #footer>
-        <div class="dict-page__footer">
-          <n-button @click="itemFormVisible = false">取消</n-button>
-          <n-button type="primary" :loading="itemSubmitting" @click="submitItemForm">确定</n-button>
-        </div>
-      </template>
-    </n-modal>
-  </div>
+  <!-- 字典项表单 -->
+  <ProModal
+    v-model:visible="itemFormVisible"
+    :title="itemEditingId !== null ? '编辑字典项' : '新增字典项'"
+    :items="itemFormItems"
+    :model="itemModalModel"
+    :cols="1"
+    :submit="submitItemForm"
+    :on-success="() => itemTableRef?.refresh()"
+    @error="(error: unknown) => feedback.error(error instanceof Error ? error.message : '保存失败')"
+  />
 </template>
 
 <style scoped>
@@ -440,39 +430,5 @@ const statusOptions = computed(() =>
 
 .dict-page__muted {
   color: var(--wa-text-disabled, #a8b0ba);
-}
-
-.dict-page__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--wa-spacing-lg, 16px);
-}
-
-.dict-page__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--wa-spacing-xs, 4px);
-}
-
-.dict-page__field label {
-  font-size: var(--wa-font-size-md, 14px);
-  color: var(--wa-text-primary, #1f2329);
-}
-
-.dict-page__required {
-  color: var(--wa-color-error, #dc2626);
-}
-
-.dict-page__tip {
-  margin: 0;
-  font-size: var(--wa-font-size-xs, 12px);
-  line-height: 1.6;
-  color: var(--wa-text-disabled, #a8b0ba);
-}
-
-.dict-page__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--wa-spacing-sm, 8px);
 }
 </style>

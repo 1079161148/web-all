@@ -1,5 +1,6 @@
 package com.webadmin.application.iam;
 
+import com.webadmin.application.iam.port.DeptHierarchyCachePort;
 import com.webadmin.application.iam.port.DeptWritePort;
 import com.webadmin.application.iam.port.DeptWritePort.DeptRow;
 import com.webadmin.common.error.BizException;
@@ -9,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 部门应用服务（L2 支撑域，事务脚本）。
@@ -40,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class DeptAppService {
 
     private final DeptWritePort deptWritePort;
+    private final DeptHierarchyCachePort deptHierarchyCache;
 
     @Transactional
     public Long createDept(Long parentId, String deptName, Integer sort, Long leaderUserId,
@@ -50,6 +54,7 @@ public class DeptAppService {
         String ancestors = resolveAncestorsForChild(effectiveParentId);
         Long id = deptWritePort.insertDept(tenantId, effectiveParentId, ancestors, deptName,
                 sort == null ? 0 : sort, leaderUserId, phone, email, status, remark);
+        evictDeptTreeAfterCommit(tenantId);
         log.info("创建部门 deptId={} name={} parentId={} ancestors={}",
                 id, deptName, effectiveParentId, ancestors);
         return id;
@@ -96,6 +101,7 @@ public class DeptAppService {
         } else {
             log.info("修改部门 deptId={} name={}", deptId, deptName);
         }
+        evictDeptTreeAfterCommit(tenantId);
     }
 
     @Transactional
@@ -112,10 +118,47 @@ public class DeptAppService {
                     "该部门下还有 " + userCount + " 名员工，请先调整他们的部门");
         }
         deptWritePort.deleteDept(deptId);
+        evictDeptTreeAfterCommit(TenantContext.require());
         log.info("删除部门 deptId={}", deptId);
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * 在<b>事务提交后</b>失效该租户的部门层级缓存。
+     *
+     * <h3>为什么不能在写操作里直接失效</h3>
+     * 部门结构被缓存在 Redis 里（{@code dept:tree}），而每个后端实例都会读它。
+     * 若在事务<b>提交前</b>失效：
+     * <ol>
+     *   <li>并发请求可能立刻回源，读到的却是<b>尚未提交</b>的旧结构，
+     *       并把这份旧结构写回缓存 —— 于是失效被"抵消"，
+     *       而且新结构要等下一次部门变更才可能被看见</li>
+     *   <li>若本事务随后回滚，缓存已被无谓地清掉（这一点无害，
+     *       但如果同时发生了第 1 点，旧值就被固化了下来）</li>
+     * </ol>
+     * 提交后失效把这些窗口消掉。代价是失效晚了几毫秒 —— 可以接受，
+     * 因为在此之前的那几毫秒里，别的请求读到的正是"提交前"的合法状态。
+     *
+     * <p>为什么不用 Spring Modulith 的事件（{@code @ApplicationModuleListener}）：
+     * 那套是<b>事务性 Outbox + 异步</b>（见 {@code TenantEventHandlers}），
+     * 适合"跨模块、允许最终一致、需要可靠投递"的场景。
+     * 而这里是同一模块内的一次缓存清理，同步 after-commit 更直接，
+     * 也不需要为一次失效在 {@code event_publication} 表里留一行。
+     */
+    private void evictDeptTreeAfterCommit(long tenantId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            // 无事务上下文（如测试或将来被非事务调用）：直接失效
+            deptHierarchyCache.evict(tenantId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deptHierarchyCache.evict(tenantId);
+            }
+        });
+    }
 
     /** 计算"挂在指定父级下"时子节点应有的 ancestors。 */
     private String resolveAncestorsForChild(long parentId) {

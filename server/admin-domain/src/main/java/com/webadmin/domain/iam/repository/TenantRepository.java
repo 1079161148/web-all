@@ -20,6 +20,18 @@ import java.util.Optional;
  */
 public interface TenantRepository {
 
+    /**
+     * 加载「状态仍为 ACTIVE 但已过有效期」的租户。
+     *
+     * <p>过期推进任务（定时）的输入。只查 ACTIVE：
+     * 已是 EXPIRED / SUSPENDED / CLOSED 的无需再次推进，
+ * 重复推进既浪费也会让领域事件重复发布。
+     *
+     * <p>{@code iam_tenant} 在租户拦截器的忽略名单中，
+     * 因此本查询可以在无租户上下文的调度线程里安全执行。
+     */
+    java.util.List<Tenant> findExpired(java.time.Instant now);
+
     /** 按 ID 加载聚合。 */
     Optional<Tenant> findById(TenantId id);
 

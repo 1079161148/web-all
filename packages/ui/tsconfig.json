@@ -2,6 +2,8 @@
   "extends": "../config/tsconfig.base.json",
   "include": ["src/**/*.ts", "src/**/*.vue"],
   "compilerOptions": {
-    "types": ["vitest/globals"]
+    // @histoire/plugin-vue/components 提供 <Story> / <Variant> 的全局组件类型。
+    // 不引入它，story 文件会因"未知组件"报错 —— 这是 Histoire 的既定接入方式。
+    "types": ["vitest/globals", "@histoire/plugin-vue/components"]
   }
 }

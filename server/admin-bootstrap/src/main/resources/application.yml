@@ -24,6 +24,18 @@ spring:
     virtual:
       enabled: true
 
+  # ------------------------------------------------------------------
+  # 文件上传上限（AI 调研附件）
+  # ⚠️ Spring 默认单文件上限只有 1MB —— 不改这里的表现是"上传稍大一点的文件
+  #    就报 MaxUploadSizeExceededException"，而且错误发生在解析阶段，
+  #    业务代码里的 20MB 校验根本不会执行（看起来像"校验没生效"）。
+  #    两处上限必须一致：这里的 max-file-size 与 SurveyFileAppService.MAX_SIZE_BYTES。
+  # ------------------------------------------------------------------
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+
   datasource:
     # ⚠️ 时区参数是关键，不要删：
     #   connectionTimeZone=UTC + forceConnectionTimeZoneToSession=true
@@ -191,6 +203,12 @@ webadmin:
     # 平台级租户 ID（超管、平台数据）
     platform-tenant-id: 0
 
+  file:
+    # 附件存储根目录（AI 调研模块上传的文件落在这里）。
+    # 相对路径相对于应用启动目录；生产用环境变量指向独立数据盘，
+    # 避免与代码/日志同盘导致磁盘写满时把应用一起拖垮。
+    root: ${FILE_STORAGE_ROOT:./data/uploads}
+
   security:
     jwt:
       # ⚠️ 生产必须通过环境变量 JWT_SECRET 覆盖。
@@ -215,3 +233,12 @@ webadmin:
       username: admin
       # 生产必须覆盖。留空则用默认值，会在启动日志中明确提示修改
       password: ${INIT_ADMIN_PASSWORD:Admin@123456}
+
+  ai:
+    # ⚠️ Key 只在服务端：前端永远不接触（浏览器直连会暴露 Key 且受跨域限制）。
+    # 留空 = 演示模式（服务端生成确定性流式回答，UX 完整、上下文仍来自真实数据库）。
+    api-key: ${AI_API_KEY:}
+    # OpenAI 兼容地址（DeepSeek 与 OpenAI 的 /chat/completions 同构）
+    base-url: ${AI_BASE_URL:https://api.deepseek.com}
+    model: ${AI_MODEL:deepseek-chat}
+    timeout-seconds: 60

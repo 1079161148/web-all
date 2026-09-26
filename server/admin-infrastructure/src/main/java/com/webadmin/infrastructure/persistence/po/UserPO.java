@@ -86,12 +86,34 @@ public class UserPO {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String remark;
 
+    /**
+     * 创建人。
+     *
+     * <p>⚠️ 这个 {@code fill} 注解<b>不是样板代码</b>：MyBatis-Plus 只把标注了 fill
+     * 的字段<b>无条件</b>放进 INSERT 列清单，其余字段生成
+     * {@code <if test="et.xxx != null">}，而该动态条件在填充器执行<b>之前</b>就已求值。
+     * 因此少写这个注解的后果是：填充器取到了值、SQL 里却没有这一列 ——
+     * 而 {@code create_by} 为空又会连带 {@code @DataScope} 的 SELF 范围失效。
+     * （这是一次实测踩到的坑，详见 {@code auditMetaObjectHandler} 的注释。）
+     */
+    @TableField(fill = FieldFill.INSERT)
     private Long createBy;
     @TableField(fill = FieldFill.INSERT)
     private Instant createTime;
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private Long updateBy;
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private Instant updateTime;
+
+    /**
+     * 令牌版本号：提升即吊销该用户已签发的全部令牌。
+     *
+     * <p>⚠️ 不要与下面的 {@code version}（{@code @Version} 乐观锁字段）混淆 ——
+     * 两者语义完全不同：乐观锁版本由框架在每次 UPDATE 时自增，
+     * 而本列只在"安全状态变化"时由业务显式自增，是<b>吊销依据</b>。
+     * 把两者合并会导致"任何一次资料修改都把用户踢下线"。
+     */
+    private Long tokenVersion;
 
     @TableLogic
     private Long delFlag;

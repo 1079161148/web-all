@@ -112,7 +112,12 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
-      - name: lint + 类型检查 + 构建
+      # pnpm verify 依次执行：
+      #   · check:naive  → 模板用到的 Naive 组件是否都已登记（精确注册的安全网）
+      #   · lint / typecheck / build
+      # check:naive 是精确注册能成立的前提：Naive 只注册清单内的组件，
+      # 漏一个不会报错只会渲染成空白 —— 这条门禁把它变成构建失败。
+      - name: 门禁（Naive 登记校验 + lint + 类型检查 + 构建）
         run: pnpm verify
 
   # -------------------------------------------------------------------

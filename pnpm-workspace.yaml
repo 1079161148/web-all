@@ -16,6 +16,33 @@ packages:
 # pinia 等依赖它的库在运行期可能拿到错误的入口实现，
 # 表现为难以定位的运行时错误，而不是安装期报错。
 allowBuilds:
+  # ⚠️ 每个条目都必须是明确的 true / false。
+  #
+  #    留成 pnpm 自动生成的占位文案（`set this to true or false`）就等于"未决策"：
+  #    pnpm 会继续把该依赖的构建脚本视为被忽略，install 因此返回非 0，
+  #    进而让**所有 script 都失败**。报错是 ERR_PNPM_IGNORED_BUILDS，
+  #    与真正的原因（某个包没批准构建）看起来是两回事。
+  #    实测被这一步挡过两次：histoire build、以及引入 ECharts 等内核时。
+  #
+  # ⚠️ 更要注意第二件事：**pnpm 会在第一次遇到新包时自动往这里插一行占位**。
+  #    所以不要凭记忆直接往这个块里追加条目 —— 先打开文件看一眼，
+  #    否则会写出重复的 YAML 键（`duplicated mapping key`），
+  #    而 install 会因此**完全失败**（依赖一个都装不上）。
+  #    这个错我犯过一次，代价是多花了一轮排查。
+
+  # es5-ext：exceljs / wangEditor 的旧传递依赖。postinstall 只是打印捐赠提示，
+  #          没有任何构建产物 → 拒绝执行。这也符合"只放行确实需要编译
+  #          原生/二进制产物的包"这条原则。
+  es5-ext: false
+
+  # esbuild：postinstall 会下载对应平台的二进制。
+  #          放行是安全的（构建工具链的核心依赖，不是运行时依赖），
+  #          拒绝则会让任何用到独立 esbuild 的传递依赖在运行期缺二进制。
+  esbuild: true
+
+  # vue-demi：postinstall 按当前 Vue 版本切换导出入口（Vue 2 / Vue 3）。
+  #          未执行时 pinia 等依赖它的库可能拿到错误入口实现，
+  #          表现为难以定位的运行时错误，而不是安装期报错。
   vue-demi: true
 
 # 允许执行「安装后构建脚本」的依赖白名单。

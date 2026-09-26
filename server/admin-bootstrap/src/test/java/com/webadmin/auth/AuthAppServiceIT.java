@@ -217,7 +217,10 @@ class AuthAppServiceIT extends AbstractIntegrationTest {
     // ==================================================================
 
     private LoginResult login(String username, String password) {
-        return authAppService.login(new LoginCommand(null, username, password, "127.0.0.1"));
+        // 测试环境关闭图形验证码（见 application-test 配置），因此 id/输入传 null；
+        // 免登录天数留空 = 不记住（本类不测 Cookie 行为，那是 CaptchaLoginIT 的范围）
+        return authAppService.login(
+                new LoginCommand(null, username, password, "127.0.0.1", null, null, null));
     }
 
     /** 重新从数据库加载超管（**新的事务**，用于验证写入是否真的提交）。 */

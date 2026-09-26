@@ -120,12 +120,24 @@ public class UserController {
     // ==================================================================
 
     @Operation(operationId = "resetUserPassword", summary = "重置用户密码",
-            description = "不传新密码时重置为平台初始密码。重置后该用户的权限缓存会被清除")
+            description = "不传新密码时重置为平台初始密码。重置后该用户的权限缓存会被清除，"
+                    + "且其全部在线会话与令牌立即失效")
     @PreAuthorize("@ps.hasPermission('iam:user:reset-password')")
     @PutMapping("/{id}/password")
     public R<Void> resetPassword(@PathVariable Long id,
                                  @RequestBody(required = false) ResetPasswordRequest request) {
         userAppService.resetPassword(id, request == null ? null : request.password());
+        return R.ok();
+    }
+
+    @Operation(operationId = "forceUserLogout", summary = "强制用户下线",
+            description = "提升该用户的令牌版本号，并注销其全部会话与刷新令牌："
+                    + "已签发的访问令牌立即失效，且持久生效（Redis 清库也不会恢复）。"
+                    + "适用于怀疑令牌泄露、需要立即阻断某账号的场景；常规限制请使用「停用」")
+    @PreAuthorize("@ps.hasPermission('iam:user:force-logout')")
+    @DeleteMapping("/{id}/sessions")
+    public R<Void> forceLogout(@PathVariable Long id) {
+        userAppService.forceLogout(id);
         return R.ok();
     }
 

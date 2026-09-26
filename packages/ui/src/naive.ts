@@ -23,9 +23,12 @@
 // ---- 基础元素（透传） ----
 export {
   NAlert,
+  NBreadcrumb,
+  NBreadcrumbItem,
   NButton,
   NCard,
   NCheckbox,
+  NCheckboxGroup,
   NCollapse,
   NConfigProvider,
   NDatePicker,
@@ -46,19 +49,32 @@ export {
   NLayoutContent,
   NLayoutHeader,
   NLayoutSider,
+  NDescriptions,
+  NDescriptionsItem,
+  NImage,
   NMenu,
   NModal,
   NPagination,
   NPopconfirm,
+  NPopover,
   NProgress,
   NRadio,
+  NRadioButton,
   NRadioGroup,
   NResult,
+  // ⚠️ NRow / NCol 不出现在任何 <template> 里，check:naive 门禁因此扫不到它们 ——
+  // 但 form-create（ProForm 的内核）在渲染 col 栅格配置时按名字在全局解析
+  // "NRow"/"NCol"，漏注册的表现是控制台刷
+  // "Failed to resolve component: nRow / nCol"，且多列表单静默降级为单列堆叠。
+  NRow,
+  NCol,
   NScrollbar,
   NSelect,
+  NSkeleton,
   NSpace,
   NSpin,
   NSwitch,
+  NTab,
   NTabPane,
   NTabs,
   NTag,
@@ -70,6 +86,7 @@ export {
   NTree,
   NTreeSelect,
   NUpload,
+  NUploadDragger,
   darkTheme,
   dateZhCN,
   zhCN

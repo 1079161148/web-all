@@ -48,6 +48,23 @@ public class UserRepositoryImpl implements UserRepository {
     private final Clock clock;
 
     @Override
+    public long countAll() {
+        // 条件为 null 时由租户拦截器追加 tenant_id（见端口注释的语义说明）
+        Long count = userMapper.selectCount(null);
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public List<Long> findAllIds() {
+        return userMapper.selectList(
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<UserPO>()
+                                .select(UserPO::getId))
+                .stream()
+                .map(UserPO::getId)
+                .toList();
+    }
+
+    @Override
     public Optional<User> findById(UserId id) {
         UserPO po = userMapper.selectById(id.value());
         if (po == null) {

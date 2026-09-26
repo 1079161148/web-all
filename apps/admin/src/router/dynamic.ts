@@ -66,16 +66,68 @@ function normalizeComponentKey(component: string): string {
  * 因此改为：把缺失路径收集起来，由 {@link buildRoutes} 在最后<b>汇总成一条</b>。
  * <b>可操作的提示必须是聚合的、低噪声的。</b>
  */
+/**
+ * 把视图路径转成稳定唯一的组件名。
+ *
+ * <p>{@code iam/user/index → IamUserIndexView}。
+ * 用<b>组件路径</b>而不是菜单 ID：同一个文件被多个菜单引用时
+ * （如占位页），按路径命名会得到同一个名字，而这正是正确的语义 ——
+ * <b>同一个组件就是同一份缓存</b>。
+ */
+function cacheNameOf(componentPath: string): string {
+  const pascal = componentPath
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')
+
+  // 兜底：路径全是无法识别的字符时也得给出一个名字，
+  // 否则该组件会被 keep-alive 的 include 直接忽略（缓存静默失效）
+  return `${pascal || 'Anonymous'}View`
+}
+
+/**
+ * 给异步 loader 的解析结果命名。
+ *
+ * <h3>为什么必须包一层 loader，而不是在别处改名</h3>
+ * 路由组件的形式是 {@code () => import('.../index.vue')}，
+ * 真正需要名字的是<b>它解析出来的那个组件</b>，而解析发生在路由导航期间。
+ * 因此只能在 loader 的返回值上做文章 —— 包一层，在模块到达时把名字写上去。
+ *
+ * <p>泛型保持原样返回，是为了让它仍然可以赋给路由的 {@code component} 字段
+ * （换成自定义的窄类型会让类型检查失败，而那是"为了改名牺牲类型"的坏交易）。
+ *
+ * <p>只在该组件<b>还没有名字</b>时才设置：模块对象在多次 import 间是同一个，
+ * 重复赋值没有意义；也避免覆盖开发者用 {@code defineOptions({ name })} 显式声明的名字。
+ */
+function namedLoader<T>(loader: () => Promise<T>, cacheName: string): () => Promise<T> {
+  return () =>
+    loader().then((module) => {
+      // 刻意不加泛型约束：`import.meta.glob` 把 loader 的类型推断成 `Promise<unknown>`，
+      // 给它套一个 `{ default: {...} }` 的约束会让所有调用点编译失败。
+      // 模块的真实形状由 glob 的运行期行为决定，因此这里按结构判断 ——
+      // 拿不到 default 就什么都不做（该组件不进缓存），而不是断言后崩掉
+      const component = (module as { default?: { name?: string } } | null | undefined)?.default
+      if (component && !component.name) {
+        component.name = cacheName
+      }
+      return module
+    })
+}
+
 function resolveComponent(component: string | undefined, missing: string[]) {
   if (!component || !component.trim()) {
-    return () => import('../views/PlaceholderView.vue')
+    return { loader: namedLoader(() => import('../views/PlaceholderView.vue'), 'PlaceholderView'), cacheName: 'PlaceholderView' }
   }
   const loader = viewModules[normalizeComponentKey(component)]
   if (!loader) {
     missing.push(component)
-    return () => import('../views/PlaceholderView.vue')
+    return { loader: namedLoader(() => import('../views/PlaceholderView.vue'), 'PlaceholderView'), cacheName: 'PlaceholderView' }
   }
-  return loader
+  const cacheName = cacheNameOf(component)
+  return { loader: namedLoader(loader, cacheName), cacheName }
 }
 
 /** 动态路由的元信息（供布局、标签页、面包屑消费）。 */
@@ -83,6 +135,25 @@ export interface DynamicRouteMeta {
   title: string
   icon?: string
   keepAlive: boolean
+  /**
+   * keep-alive 的 {@code include} 用的组件名。
+   *
+   * <h3>为什么必须显式给一个名字</h3>
+   * {@code keep-alive} 的 {@code include} <b>按组件名匹配</b>，
+   * 而本项目的视图文件名<b>全部是 {@code index.vue}</b>
+   * （{@code views/iam/user/index.vue}、{@code views/org/dept/index.vue} …），
+   * {@code <script setup>} 推导出的隐式名因此<b>全都是 {@code index}</b>。
+   *
+   * <p>直接拿它当名字会得到"所有页面共用一个缓存槽"：
+   * 关掉页签缓存不释放（内存只增不减）、不关页签又会被别的页面顶掉。
+   * 所以名字由<b>组件路径</b>推导（{@code iam/user/index → IamUserIndexView}），
+   * 全局唯一且稳定。
+   *
+   * <p>用路径而不是菜单 ID 推导，是因为<b>同一个组件文件可能被多个菜单引用</b>
+   * （如占位页）。按菜单 ID 命名会让同一个模块被反复改名，
+   * 而按路径命名天然得到同一个名字 —— 这恰好是正确的语义：<b>同一个组件就是同一份缓存</b>。
+   */
+  cacheName: string
   alwaysShow: boolean
   /** 菜单 ID，便于与后端菜单对齐。 */
   menuId: number
@@ -149,14 +220,16 @@ export function buildRoutes(menus: MenuDTO[]): DynamicRoute[] {
     .filter((menu): menu is MenuDTO & { id: number } => menu.id !== undefined)
     .map((menu) => {
       const fullPath = resolveFullPath(menu, byId)
+      const resolved = resolveComponent(menu.component ?? undefined, missingComponents)
       const route: DynamicRoute = {
         path: fullPath,
         name: `menu-${menu.id}`,
-        component: resolveComponent(menu.component ?? undefined, missingComponents),
+        component: resolved.loader,
         meta: {
           title: menu.menuName ?? '未命名菜单',
           icon: menu.icon ?? undefined,
           keepAlive: menu.keepAlive ?? false,
+          cacheName: resolved.cacheName,
           alwaysShow: menu.alwaysShow ?? false,
           menuId: menu.id,
           expectedComponent: menu.component ?? undefined
@@ -193,9 +266,18 @@ function warnMissingComponents(missing: string[]): void {
 /**
  * 自底向上拼接完整路径。
  *
- * <p>后端的目录与菜单各自的 `path` 是**相对片段**（`system` / `user`），
- * 而 vue-router 注册时需要完整路径（`/system/user`）。这里沿 parentId 向上回推，
- * 并带一个访问集合防环 —— 数据库里若出现父子互指（脏数据或人工改库），
+ * <h3>⚠️ 后端的 `path` 两种写法混用（这不是笔误，是实际数据）</h3>
+ * <pre>
+ *   DIR   /system    ← 绝对：带前导斜杠
+ *   DIR   /platform
+ *   MENU  post       ← 相对片段：不带斜杠
+ *   MENU  user
+ * </pre>
+ * vue-router 注册时需要完整路径（`/system/post`）。因此这里沿 parentId 向上回推，
+ * 并<b>逐段归一斜杠</b>后再拼接 —— 只按其中一种约定写，
+ * 要么拼出 `//system/post`，要么丢掉子段（后者曾导致所有业务页 404）。
+ *
+ * <p>带一个访问集合防环：数据库里若出现父子互指（脏数据或人工改库），
  * 没有防环就会无限循环、把浏览器卡死。
  */
 function resolveFullPath(menu: MenuDTO & { id: number }, byId: Map<number, MenuDTO>): string {
@@ -214,11 +296,29 @@ function resolveFullPath(menu: MenuDTO & { id: number }, byId: Map<number, MenuD
     visited.add(currentId)
 
     if (current.path) {
-      // 绝对路径直接终止（该菜单自带完整路径，不再拼父级）
-      if (current.path.startsWith('/')) {
-        return current.path
+      /*
+       * ⚠️ 逐段去掉首尾斜杠再拼接。后端两种写法混用：
+       *   DIR   /system    ← 带前导斜杠（绝对）
+       *   MENU  post       ← 相对片段
+       * 若原样拼，`/system` + `post` 会得到 `//system/post`。
+       */
+      const segment = current.path.replace(/^\/+|\/+$/g, '')
+      if (segment) {
+        segments.unshift(segment)
       }
-      segments.unshift(current.path)
+
+      /*
+       * 绝对路径意味着"这一段的起点就是根"，因此不再向上追溯父级。
+       *
+       * ⚠️ 但它是**基**，不是**整体** —— 这里曾经写成 `return current.path`，
+       * 把已经收集到的子段全部丢掉。后果不是"少一个斜杠"这么轻：
+       * `/system` 下有 6 个菜单，它们会被<b>全部注册成同一个路径 `/system`</b>，
+       * 于是每个业务地址都命中通配 404 ——
+       * 表现为"除了登录页，所有页面都不存在"，而路由表本身看起来"有菜有单"。
+       */
+      if (current.path.startsWith('/')) {
+        break
+      }
     }
 
     // 显式标注类型：`current` 会被重新赋值，而 `current.parentId` 的类型

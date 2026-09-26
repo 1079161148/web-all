@@ -21,8 +21,16 @@
  */
 
 // ---- 请求客户端（手写）----
-export { ApiError, request, SUCCESS_CODE } from './client'
-export type { ApiResponse, PageResult, RequestOptions } from './client'
+export {
+  ApiError,
+  BASE_URL,
+  request,
+  setApiErrorHandler,
+  streamAuthHeaders,
+  streamFetch,
+  SUCCESS_CODE
+} from './client'
+export type { ApiErrorHandler, ApiResponse, PageResult, RequestOptions } from './client'
 
 // ---- 契约生成产物（orval 生成，禁止手工修改）----
 export * from './generated/endpoints'

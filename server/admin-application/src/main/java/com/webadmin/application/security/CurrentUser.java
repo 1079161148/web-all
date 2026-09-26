@@ -18,8 +18,14 @@ package com.webadmin.application.security;
  * 一旦应用层能直接读 {@code SecurityContextHolder}，就会出现
  * "在领域服务里偷偷读安全上下文"这种不可测试、不可复用的代码。
  * 用一个应用层自己的 record + 端口，把这份能力限制在明确的边界内。
+ *
+ * @param sessionId 当前会话 ID（访问令牌的 {@code jti}）。
+ *                  注销"当前设备"、列出在线会话都需要它；
+ *                  为 null 表示"本次请求没有会话上下文"
+ *                  （旧版令牌、或未来可能出现的非会话型令牌）——
+ *                  此时与"会话"相关的操作应明确拒绝而不是猜
  */
-public record CurrentUser(long userId, long tenantId, String username) {
+public record CurrentUser(long userId, long tenantId, String username, String sessionId) {
 
     /** 平台级（未绑定租户）标识。 */
     public boolean isPlatformLevel() {

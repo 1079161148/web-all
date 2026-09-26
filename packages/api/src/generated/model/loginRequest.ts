@@ -23,4 +23,18 @@ export interface LoginRequest {
      * @maxLength 128
      */
   password: string;
+  /**
+     * 图形验证码 id（由 GET /api/v1/auth/captcha 签发）。服务端开启验证码时必填；验证码一次性，校验后立即失效
+     * @minLength 0
+     * @maxLength 64
+     */
+  captchaId?: string;
+  /**
+     * 用户输入的验证码（大小写不敏感）
+     * @minLength 0
+     * @maxLength 16
+     */
+  captchaCode?: string;
+  /** 免登录天数，仅支持服务端白名单值（默认 1 / 7 / 30）。留空或 0 表示不记住：刷新令牌 Cookie 为会话级，关闭浏览器即失效。非白名单值会被拒绝，不会静默纠正 */
+  rememberDays?: number;
 }

@@ -79,5 +79,17 @@ public abstract class AbstractIntegrationTest {
 
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(REDIS_PORT));
+
+        // 限流在生产默认开启；集成测试显式关闭 —— IT 会用同一身份高频登录
+        // （每个测试类的 @BeforeEach 都要登录），全走 127.0.0.1，
+        // 10 次/分钟的登录限流会把后续测试类整体打成 10005。
+        // 限流本身是否生效，应由它的专项测试验证，而不是让所有 IT 为它陪绑。
+        registry.add("webadmin.security.rate-limit.enabled", () -> "false");
+
+        // 图形验证码同理关闭：答案只存在于图片里，IT 无法"识图"。
+        // 验证码本身的语义（一次性 / 过期 / 错误拒绝）由 CaptchaLoginIT
+        // 用 @TestPropertySource 显式打开后专门验证 —— 那里不需要知道答案，
+        // 只需要断言"错误输入被拒"与"同一个 id 不能消费两次"。
+        registry.add("webadmin.security.captcha.enabled", () -> "false");
     }
 }

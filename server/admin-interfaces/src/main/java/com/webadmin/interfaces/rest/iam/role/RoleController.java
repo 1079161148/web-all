@@ -1,6 +1,7 @@
 package com.webadmin.interfaces.rest.iam.role;
 
 import com.webadmin.application.iam.RoleAppService;
+import com.webadmin.application.iam.RoleSimulationAppService;
 import com.webadmin.application.iam.port.RoleQueryPort;
 import com.webadmin.application.iam.query.RolePageQuery;
 import com.webadmin.common.api.PageResult;
@@ -8,6 +9,7 @@ import com.webadmin.common.api.R;
 import com.webadmin.common.error.BizException;
 import com.webadmin.domain.iam.IamErrorCode;
 import com.webadmin.interfaces.rest.iam.role.response.RoleResponse;
+import com.webadmin.interfaces.rest.iam.role.response.RoleSimulationResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -45,6 +48,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RoleController {
 
     private final RoleAppService roleAppService;
+    private final RoleSimulationAppService roleSimulationAppService;
     private final RoleQueryPort roleQueryPort;
 
     // ==================================================================
@@ -132,6 +136,34 @@ public class RoleController {
                                 @Valid @RequestBody ChangeRoleStatusRequest request) {
         roleAppService.changeStatus(id, request.status());
         return R.ok();
+    }
+
+    // ==================================================================
+    // 数据权限预览
+    // ==================================================================
+
+    /**
+     * 预览"某用户仅拥有该角色"时可见的数据范围。
+     *
+     * <h3>为什么用 GET 而不是 POST</h3>
+     * 它是<b>只读</b>的：不写业务数据、不改任何状态，且结果由（角色, 用户）唯一决定。
+     * 只读 + 幂等就该是 GET —— 这也让它在浏览器里可被直接验证与缓存语义一致。
+     *
+     * <h3>为什么只返回条数，不返回数据行</h3>
+     * 见 {@code RoleSimulationView} 的说明：返回数据行等于开了一个
+     * "用任意角色身份读任意数据"的口子，而条数 + 生效部门已经足够回答
+     * "范围配置得对不对"这个真正的运维问题。
+     */
+    @Operation(operationId = "simulateRoleDataScope", summary = "预览角色的数据范围",
+            description = "以「角色 + 某个用户账号」为输入，返回该角色在该用户位置上可见的数据条数与生效部门。"
+                    + "过滤条件由与真实列表相同的拦截器产生，因此结果与实际打开列表一致；"
+                    + "仅返回统计，不返回数据行。停用角色与超管角色会被拒绝。"
+                    + "入参用账号而不是用户 ID：主键是雪花 ID，浏览器端的数字无法精确表示它")
+    @PreAuthorize("@ps.hasPermission('iam:role:simulate')")
+    @GetMapping("/{id}/simulation")
+    public R<RoleSimulationResponse> simulate(@PathVariable Long id,
+                                             @RequestParam("username") String username) {
+        return R.ok(RoleSimulationResponse.from(roleSimulationAppService.simulate(id, username)));
     }
 
     // ==================================================================

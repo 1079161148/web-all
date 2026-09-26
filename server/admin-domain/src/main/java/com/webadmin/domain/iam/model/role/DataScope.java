@@ -1,6 +1,5 @@
 package com.webadmin.domain.iam.model.role;
 
-import java.util.EnumSet;
 import java.util.Set;
 
 /**
@@ -49,7 +48,32 @@ public enum DataScope {
         return this == DEPT_AND_CHILD && other == DEPT;
     }
 
-    /** 同一用户拥有多个角色时，取并集 —— 即最宽的那个范围。 */
+    /**
+     * 宽窄优先级（从宽到窄）。多角色合并时取靠前者。
+     *
+     * <p>为什么不用枚举声明顺序：声明顺序是 {@code ALL, CUSTOM, DEPT, DEPT_AND_CHILD, SELF}
+     * ——"越靠后越窄"，于是"取 ordinal 最大者"得到的恰好是<b>最窄</b>的 SELF，
+     * 与"多角色取并集"完全相反。后果静默且难归因：给用户同时配"全部数据"
+     * 与"仅本人"两个角色，他只能看到自己的数据 —— 不报错、不越权，
+     * 但功能莫名其妙地少了（实测踩到过）。
+     */
+    private static final DataScope[] BROADNESS_ORDER = {ALL, DEPT_AND_CHILD, DEPT, CUSTOM, SELF};
+
+    /**
+     * 同一用户拥有多个角色时，取并集 —— 即最宽的那个范围。
+     *
+     * <h3>已知取舍：这里只能取"一个"范围，不是真正的并集</h3>
+     * {@link #SELF} 与部门类范围在数学上<b>互不包含</b>：SELF 是"我创建的"，
+     * 而那些数据可能落在我不属于的部门里；DEPT 是"我部门的"，其中大部分不是我创建的。
+     * 因此"用户同时拥有 SELF 与 DEPT"时，严格语义应当是
+     * {@code create_by = 我 OR dept_id = 我的部门} —— 即条件层面的 OR。
+     *
+     * <p>当前实现按"部门类范围优先于个人范围"的惯例取靠前者（这也是主流中台的常见做法），
+     * 代价是<b>个人范围在合并时被覆盖</b>。要真正做到并集，需要把
+     * {@code DataScopeConditionBuilder} 的入参从"单个范围"改为"范围集合"并拼 OR ——
+     * 那是一次跨层改动，等出现真实诉求再做，而不是现在提前复杂化。
+     * 写在这里是为了让后来者知道这是<b>有意为之的取舍</b>，而不是实现遗漏。
+     */
     public static DataScope widestOf(Set<DataScope> scopes) {
         if (scopes == null || scopes.isEmpty()) {
             // 没有任何角色时的兜底：最严格的范围。
@@ -57,9 +81,11 @@ public enum DataScope {
             // 而不是默认放开。这是安全默认值（fail-closed）原则。
             return SELF;
         }
-        return EnumSet.copyOf(scopes).stream()
-                .max((a, b) -> Integer.compare(a.ordinal(), b.ordinal()))
-                // ordinal 顺序即声明顺序：ALL 最宽、SELF 最窄，故取 ordinal 最大者
-                .orElse(SELF);
+        for (DataScope candidate : BROADNESS_ORDER) {
+            if (scopes.contains(candidate)) {
+                return candidate;
+            }
+        }
+        return SELF;
     }
 }

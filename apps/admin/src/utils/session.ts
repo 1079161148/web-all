@@ -15,9 +15,11 @@
  * 而对 C 端产品则需要重新权衡（那时应改用 refresh token + 静默续期）。
  *
  * <h3>关于 XSS</h3>
- * sessionStorage 可被同源脚本读取，因此 <b>XSS 防护是它的安全前提</b>
- * （见设计文档 §14.2 的 CSP 与富文本白名单）。
- * 彻底消除该风险需要 BFF + httpOnly Cookie，属 P2 的评估项。
+ * sessionStorage 可被同源脚本读取，因此这里<b>只允许存"短效"凭证</b>：
+ * 访问令牌 30 分钟过期，被偷走的伤害有界。
+ * <b>长效的刷新令牌已迁移到 HttpOnly Cookie</b>（服务端下发，JS 读不到，
+ * 见后端 AuthController）—— 本模块不再提供它的读写入口；
+ * clearSession 里对 'refreshToken' 的清理只为移除旧版本的残留。
  */
 
 const TOKEN_KEY = 'accessToken'
@@ -53,6 +55,14 @@ export function setToken(token: string): void {
   safeSet(TOKEN_KEY, token)
 }
 
+/**
+ * 刷新令牌：本模块不再存取。
+ *
+ * <p>它经 HttpOnly Cookie 随登录/刷新响应下发、由浏览器在调用
+ * {@code /api/v1/auth/refresh} 时自动携带（见 client.ts 的 doRefresh）。
+ * JS 读不到它 —— 这正是迁移的目的：XSS 偷不走长期凭证。
+ */
+
 export function getTenantId(): string | null {
   return safeGet(TENANT_KEY)
 }
@@ -65,4 +75,6 @@ export function setTenantId(tenantId: string): void {
 export function clearSession(): void {
   safeSet(TOKEN_KEY, '')
   safeSet(TENANT_KEY, '')
+  // 旧版本曾把刷新令牌放 sessionStorage —— 清掉残留
+  safeSet('refreshToken', '')
 }

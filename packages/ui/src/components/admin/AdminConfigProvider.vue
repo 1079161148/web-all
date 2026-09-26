@@ -22,16 +22,20 @@ const props = withDefaults(
   defineProps<{
     /** 主题模式。 */
     mode?: ThemeMode
+    /** 自定义品牌主色（十六进制）。空 = 使用 Token 默认。 */
+    primary?: string
   }>(),
   {
-    mode: 'light'
+    mode: 'light',
+    primary: undefined
   }
 )
 
 const theme = computed(() => (props.mode === 'dark' ? darkTheme : null))
 
 const themeOverrides = computed<GlobalThemeOverrides>(() => {
-  const { colors, neutrals, radius, fontSize } = getTokens(props.mode)
+  // primary：调色板自定义品牌色（空 = 用 Token 默认）
+  const { colors, neutrals, radius, fontSize } = getTokens(props.mode, props.primary || undefined)
 
   return {
     common: {

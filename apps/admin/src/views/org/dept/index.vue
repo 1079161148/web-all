@@ -1,9 +1,16 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, h, ref } from 'vue'
-import { NInput, NInputNumber, NModal, NSelect, ProTable, feedback } from '@admin/ui'
-import type { ProColumn, ProRowAction, ProTableQuery } from '@admin/ui'
-import { useDict } from '@/composables/useDict'
-import DictTag from '@/components/DictTag.vue'
+import {
+  PageContainer,
+  ProModal,
+  ProTable,
+  TREE_PRESETS,
+  feedback,
+  filterFlatTreeByLabel,
+  flatOptionsWithDepth
+} from '@admin/ui'
+import type { ProColumn, ProFormItem, ProRowAction, ProTableQuery } from '@admin/ui'
+import { DictTag } from '@admin/ui'
 import type { DeptDTO, DeptRequest } from '@admin/api'
 import {
   createDeptAction,
@@ -30,8 +37,7 @@ import {
  * 把 {@code defaultPageSize} 设得很大，让 ProTable 的分页器实际上不生效。
  */
 
-const tableRef = ref<{ reload: (resetPage?: boolean) => void } | null>(null)
-const dicts = useDict('sys_status')
+const tableRef = ref<{ reload: () => void; refresh: () => void } | null>(null)
 
 /** 缓存最近一次加载的部门，用于"选择上级部门"的下拉与层级名展示。 */
 const depts = ref<DeptDTO[]>([])
@@ -56,16 +62,26 @@ function depthOf(dept: DeptDTO): number {
  * ProTable 要求分页契约，而部门是全量树。
  * 这里把一次全量查询包装成"单页结果" —— 而不是改造 ProTable 的契约
  * （那会为了一个页面而放宽所有列表的约束）。
+ *
+ * <p>名称筛选在<b>前端</b>做（数据已全量在内存，再发一次请求没有意义），
+ * 用共享的 {@code filterFlatTreeByLabel}：命中节点连同祖先一起保留，
+ * 否则子部门会变成孤立的根节点、缩进全错。
  */
-async function fetchDeptPage(_query: ProTableQuery) {
+async function fetchDeptPage(query: ProTableQuery) {
   const list = (await loadDeptList()) ?? []
+  // depts 始终保存全量：上级部门下拉与"是否有子部门"的判断都依赖完整列表
   depts.value = list
+  const keyword = typeof query.deptName === 'string' ? query.deptName : ''
+  const records =
+    keyword.trim() === ''
+      ? list
+      : filterFlatTreeByLabel(list, keyword, { labelOf: TREE_PRESETS.dept.labelOf })
   return {
-    records: list,
-    total: list.length,
+    records,
+    total: records.length,
     page: 1,
     // size 必须等于 total，否则 ProTable 会按 size 切掉后面的行
-    size: Math.max(list.length, 1)
+    size: Math.max(records.length, 1)
   }
 }
 
@@ -74,6 +90,8 @@ const columns: ProColumn<DeptDTO>[] = [
     key: 'deptName',
     title: '部门名称',
     minWidth: 220,
+    search: 'input',
+    searchPlaceholder: '模糊匹配',
     renderFn: (row) =>
       h(
         'span',
@@ -128,7 +146,7 @@ const rowActions: ProRowAction<DeptDTO>[] = [
       if (row.id === undefined) return
       await deleteDeptAction(row.id)
       feedback.success('部门已删除')
-      tableRef.value?.reload(false)
+      tableRef.value?.refresh()
     }
   }
 ]
@@ -138,25 +156,53 @@ const rowActions: ProRowAction<DeptDTO>[] = [
 // ---------------------------------------------------------------------
 
 const formVisible = ref(false)
-const submitting = ref(false)
 const editingId = ref<number | null>(null)
-const form = ref<DeptRequest>({ parentId: 0, deptName: '', sort: 0, status: 'ACTIVE', remark: '' })
-const isEdit = computed(() => editingId.value !== null)
+const modalModel = ref<Record<string, unknown>>({})
 
-const parentOptions = computed(() =>
-  depts.value
-    .filter((dept) => dept.id !== undefined && dept.id !== editingId.value)
-    .map((dept) => ({
-      label: `${'　'.repeat(depthOf(dept))}${dept.deptName ?? ''}`,
-      value: dept.id as number
-    }))
-)
-parentOptions.value.unshift({ label: '— 根部门 —', value: 0 })
+/**
+ * 「上级部门」下拉选项。
+ *
+ * <p>⚠️ 这里修过一个真实 bug：「— 根部门 —」曾经用
+ * {@code parentOptions.value.unshift(...)} 加在 <b>computed 外面</b>。
+ * 那行只在 setup 时执行一次，而 computed 的缓存数组会在依赖变化后被整个替换 ——
+ * 于是部门数据一加载完，这个选项就<b>消失</b>了，
+ * 表现是"新增部门时选不了根部门"，且没有任何报错。
+ * 现在把它放进 computed 内部，随每次求值一起产生。
+ *
+ * <p>层级缩进交给共享的 {@code flatOptionsWithDepth}：
+ * 它先建树（层级天然可得）再遍历，因此不再需要手写"算深度"。
+ */
+const parentOptions = computed(() => [
+  { label: '— 根部门 —', value: 0 },
+  ...flatOptionsWithDepth(depts.value, {
+    labelOf: TREE_PRESETS.dept.labelOf,
+    valueOf: (dept) => dept.id as number,
+    // 不能把部门挂到自己下面（真正意义上的"到子部门下"由后端拒绝）
+    filter: (dept) => dept.id !== editingId.value
+  })
+])
+
+const formItems = computed<ProFormItem[]>(() => [
+  {
+    field: 'parentId',
+    title: '上级部门',
+    type: 'select',
+    options: parentOptions.value,
+    value: 0,
+    tip: '变更上级部门会级联更新整棵子树的路径。不能移动到自己的子部门下（会形成环）。'
+  },
+  { field: 'deptName', title: '部门名称', required: true, placeholder: '请输入部门名称' },
+  { field: 'sort', title: '显示顺序', type: 'number', value: 0, props: { min: 0 } },
+  { field: 'phone', title: '联系电话' },
+  { field: 'email', title: '邮箱' },
+  { field: 'status', title: '状态', type: 'select', dict: 'sys_status', value: 'ACTIVE' },
+  { field: 'remark', title: '备注', type: 'textarea' }
+])
 
 function openForm(row: DeptDTO | null, parent: DeptDTO | null): void {
   if (row) {
     editingId.value = row.id ?? null
-    form.value = {
+    modalModel.value = {
       parentId: row.parentId ?? 0,
       deptName: row.deptName ?? '',
       sort: row.sort ?? 0,
@@ -167,47 +213,37 @@ function openForm(row: DeptDTO | null, parent: DeptDTO | null): void {
     }
   } else {
     editingId.value = null
-    form.value = {
+    modalModel.value = {
       parentId: parent?.id ?? 0,
-      deptName: '',
       sort: 0,
-      status: 'ACTIVE',
-      remark: ''
+      status: 'ACTIVE'
     }
   }
   formVisible.value = true
 }
 
-async function submitForm(): Promise<void> {
-  if (!form.value.deptName.trim()) {
-    feedback.warning('请输入部门名称')
-    return
+/** 显式构造 payload：后端需要哪些字段在这一处可见。 */
+async function submitForm(values: Record<string, unknown>): Promise<void> {
+  const payload: DeptRequest = {
+    parentId: values.parentId === undefined || values.parentId === null ? 0 : Number(values.parentId),
+    deptName: String(values.deptName ?? ''),
+    sort: values.sort === undefined || values.sort === null ? 0 : Number(values.sort),
+    phone: values.phone ? String(values.phone) : '',
+    email: values.email ? String(values.email) : '',
+    status: values.status ? String(values.status) : 'ACTIVE',
+    remark: values.remark ? String(values.remark) : ''
   }
-  submitting.value = true
-  try {
-    if (editingId.value !== null) {
-      await updateDeptAction(editingId.value, form.value)
-    } else {
-      await createDeptAction(form.value)
-    }
-    feedback.success('保存成功')
-    formVisible.value = false
-    tableRef.value?.reload(false)
-  } catch (error) {
-    // 后端的"不能移动到自己的子部门下"会在这里显示 —— 提示文案已说明后果
-    feedback.error(error instanceof Error ? error.message : '保存失败')
-  } finally {
-    submitting.value = false
+  if (editingId.value !== null) {
+    await updateDeptAction(editingId.value, payload)
+  } else {
+    await createDeptAction(payload)
   }
+  feedback.success('保存成功')
 }
-
-const statusOptions = computed(() =>
-  dicts.sys_status.value.map((o) => ({ label: o.label, value: o.value }))
-)
 </script>
 
 <template>
-  <div class="dept-page">
+  <PageContainer title="部门管理" description="部门树用于数据权限的范围判定；上级关系决定数据可见层级">
     <ProTable
       ref="tableRef"
       :columns="columns"
@@ -219,83 +255,16 @@ const statusOptions = computed(() =>
       @create="openForm(null, null)"
       @empty-action="openForm(null, null)"
     />
+  </PageContainer>
 
-    <n-modal v-model:show="formVisible" preset="card" :title="isEdit ? '编辑部门' : '新增部门'" style="width: 520px">
-      <div class="dept-page__form">
-        <div class="dept-page__field">
-          <label>上级部门</label>
-          <n-select v-model:value="form.parentId" :options="parentOptions" placeholder="选择上级部门" />
-          <p class="dept-page__tip">
-            变更上级部门会<b>级联更新整棵子树</b>的路径。不能移动到自己的子部门下（会形成环）。
-          </p>
-        </div>
-        <div class="dept-page__field">
-          <label>部门名称 <span class="dept-page__required">*</span></label>
-          <n-input v-model:value="form.deptName" placeholder="请输入部门名称" />
-        </div>
-        <div class="dept-page__field">
-          <label>显示顺序</label>
-          <n-input-number v-model:value="form.sort" :min="0" />
-        </div>
-        <div class="dept-page__field">
-          <label>联系电话</label>
-          <n-input v-model:value="form.phone" />
-        </div>
-        <div class="dept-page__field">
-          <label>邮箱</label>
-          <n-input v-model:value="form.email" />
-        </div>
-        <div class="dept-page__field">
-          <label>状态</label>
-          <n-select v-model:value="form.status" :options="statusOptions" />
-        </div>
-        <div class="dept-page__field">
-          <label>备注</label>
-          <n-input v-model:value="form.remark" type="textarea" :rows="2" />
-        </div>
-      </div>
-      <template #footer>
-        <div class="dept-page__footer">
-          <n-button @click="formVisible = false">取消</n-button>
-          <n-button type="primary" :loading="submitting" @click="submitForm">确定</n-button>
-        </div>
-      </template>
-    </n-modal>
-  </div>
+  <ProModal
+    v-model:visible="formVisible"
+    :title="editingId !== null ? '编辑部门' : '新增部门'"
+    :items="formItems"
+    :model="modalModel"
+    :cols="1"
+    :submit="submitForm"
+    :on-success="() => tableRef?.refresh()"
+    @error="(error: unknown) => feedback.error(error instanceof Error ? error.message : '保存失败')"
+  />
 </template>
-
-<style scoped>
-.dept-page__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--wa-spacing-lg, 16px);
-}
-
-.dept-page__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--wa-spacing-xs, 4px);
-}
-
-.dept-page__field label {
-  font-size: var(--wa-font-size-md, 14px);
-  color: var(--wa-text-primary, #1f2329);
-}
-
-.dept-page__required {
-  color: var(--wa-color-error, #dc2626);
-}
-
-.dept-page__tip {
-  margin: 0;
-  font-size: var(--wa-font-size-xs, 12px);
-  line-height: 1.6;
-  color: var(--wa-text-disabled, #a8b0ba);
-}
-
-.dept-page__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--wa-spacing-sm, 8px);
-}
-</style>

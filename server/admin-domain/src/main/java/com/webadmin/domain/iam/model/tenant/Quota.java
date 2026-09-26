@@ -59,6 +59,32 @@ public record Quota(long remainingUsers, long remainingStorageBytes, long remain
         return remaining(type) <= 0;
     }
 
+    /**
+     * 归还配额（业务对象被删除时调用），返回新实例。
+     *
+     * <h3>为什么必须提供归还</h3>
+     * 只有扣减没有归还的配额是单向消耗：租户删掉一个用户后，
+     * 那个名额就永久消失了 —— 表现为"明明删了人却还是建不了新用户"。
+     * 用户会把它当成 bug（它确实是）。
+     *
+     * <p>注意本方法<b>不做上限检查</b>：归还可能使剩余量超过套餐初始值
+     * （例如套餐已降级）。上限收敛是 {@code Tenant#releaseQuota} 的职责 ——
+     * 只有聚合知道"当前套餐的初始配额"是多少。
+     */
+    public Quota release(QuotaType type, long amount) {
+        if (amount < 0) {
+            throw new IllegalArgumentException("配额归还量不能为负数，实际为: " + amount);
+        }
+        if (amount == 0) {
+            return this;
+        }
+        return switch (type) {
+            case USER -> new Quota(remainingUsers + amount, remainingStorageBytes, remainingApiCalls);
+            case STORAGE_BYTES -> new Quota(remainingUsers, remainingStorageBytes + amount, remainingApiCalls);
+            case API_CALLS_PER_MONTH -> new Quota(remainingUsers, remainingStorageBytes, remainingApiCalls + amount);
+        };
+    }
+
     private static void assertNonNegative(QuotaType type, long value) {
         if (value < 0) {
             throw new IllegalArgumentException(

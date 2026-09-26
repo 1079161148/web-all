@@ -41,6 +41,7 @@ public class UserConverter {
         po.setLoginTime(user.loginTime());
         po.setFailCount(user.failCount());
         po.setLockUntil(user.lockUntil());
+        po.setTokenVersion(user.tokenVersion());
         return po;
     }
 
@@ -71,6 +72,7 @@ public class UserConverter {
                 po.getLoginTime(),
                 po.getFailCount() == null ? 0 : po.getFailCount(),
                 po.getLockUntil(),
+                po.getTokenVersion() == null ? 0L : po.getTokenVersion(),
                 roles,
                 clock);
     }
@@ -95,5 +97,8 @@ public class UserConverter {
         po.setLoginTime(user.loginTime());
         po.setFailCount(user.failCount());
         po.setLockUntil(user.lockUntil());
+        // 版本号必须一起回填：否则"改密码 → 吊销旧令牌"会因为忘记映射而静默失效
+        // （UPDATE 里不含该列，库里的版本号永远不涨）
+        po.setTokenVersion(user.tokenVersion());
     }
 }

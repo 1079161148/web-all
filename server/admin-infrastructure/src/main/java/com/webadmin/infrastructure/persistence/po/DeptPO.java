@@ -32,9 +32,11 @@ public class DeptPO {
     private String status;
     private String remark;
 
+    @TableField(fill = FieldFill.INSERT)
     private Long createBy;
     @TableField(fill = FieldFill.INSERT)
     private Instant createTime;
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private Long updateBy;
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private Instant updateTime;

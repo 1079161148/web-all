@@ -14,6 +14,9 @@ logs/
 npm-debug.log*
 pnpm-debug.log*
 
+# DeepSeek Harness 运行时（启动日志内含一次性 token，绝不入库）
+.dsh/
+
 # ===== 环境变量与本地凭据（禁止提交密钥）=====
 .env
 .env.local
@@ -38,6 +41,11 @@ Thumbs.db
 server/**/target/
 !server/**/target/.gitkeep
 
+# ===== 上传的附件（运行期数据，不入库）=====
+# 默认存储根目录为 admin-bootstrap 启动目录下的 data/uploads
+# （见 application.yml 的 webadmin.file.root）
+server/**/data/
+
 # ===== 契约生成产物 =====
 # 说明：packages/api/src/generated 必须提交（契约优先要求 CI 校验生成产物与提交一致，
 # 见设计文档 §10.2）。因此这里显式不忽略，仅忽略临时文件。
@@ -47,6 +55,12 @@ packages/api/src/generated/**/*.tmp
 coverage/
 playwright-report/
 test-results/
+
+# ===== 本地运行产物（不入库）=====
+# Playwright CLI 的本地会话状态
+.playwright-cli/
+# Redis 的 RDB 快照（本地数据，绝不入库）
+*.rdb
 
 # ===== 契约流水线的中间产物 =====
 # openapi.stripped.json 由 prepare-spec.mjs 从 openapi.json 机械派生

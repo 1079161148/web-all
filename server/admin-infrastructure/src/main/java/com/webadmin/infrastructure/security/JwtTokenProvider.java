@@ -82,22 +82,34 @@ public class JwtTokenProvider implements com.webadmin.application.iam.port.Token
      * （那会把令牌格式泄漏给前端，一旦换成不透明令牌前端就要改）。
      */
     @Override
-    public IssuedToken issue(CurrentUser user, Set<String> roleKeys) {
-        return new IssuedToken(issueAccessToken(user, roleKeys), accessTokenTtlSeconds());
+    public IssuedToken issue(CurrentUser user, Set<String> roleKeys, long tokenVersion) {
+        return new IssuedToken(issueAccessToken(user, roleKeys, tokenVersion), accessTokenTtlSeconds());
     }
 
     /** 签发访问令牌（内部实现，返回裸字符串）。 */
-    public String issueAccessToken(CurrentUser user, Set<String> roleKeys) {
+    public String issueAccessToken(CurrentUser user, Set<String> roleKeys, long tokenVersion) {
+        if (user.sessionId() == null || user.sessionId().isBlank()) {
+            // 没有会话的令牌无法被吊销体系管理（注销/踢人都找不到它），
+            // 与其签出一个"谁也收不回"的令牌，不如在这里快速失败
+            throw new IllegalStateException("签发访问令牌要求会话 ID（jti）非空 —— "
+                    + "无会话的令牌无法参与吊销体系，必须先建立会话");
+        }
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .issuedAt(now)
                 .expiresAt(now.plus(accessTokenTtl))
+                // jti = 会话 ID：会话注册表/在线列表/定向踢人的键。
+                // 没有它，"注销这台设备"就无从谈起
+                .id(user.sessionId())
                 .subject(String.valueOf(user.userId()))
                 .claim("userId", user.userId())
                 .claim("tenantId", user.tenantId())
                 .claim("username", user.username())
                 .claim("roles", roleKeys)
+                // ver = 签发时的令牌版本号：与用户当前版本不一致即失效。
+                // 这是"改密码/停用立即踢人"的全部依据
+                .claim("ver", tokenVersion)
                 .build();
         // ⚠️ 必须显式指定算法头，否则 NimbusJwtEncoder 会尝试为默认算法（RS256）
         //    在密钥源里找匹配的 JWK，而 ImmutableSecret 提供的是对称密钥（oct），

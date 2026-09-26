@@ -30,6 +30,7 @@ import {
   pageRoles,
   pageUsers,
   resetUserPassword,
+  simulateRoleDataScope,
   unlockUser,
   updateConfig,
   updateDept,
@@ -48,6 +49,7 @@ import type {
   MenuRequest,
   PostRequest,
   RoleResponse,
+  RoleSimulationResponse,
   UserResponse
 } from '@admin/api'
 import type { ProTableQuery, ProTableRequest } from '@admin/ui'
@@ -235,6 +237,22 @@ export async function assignRolePermissionsAction(
 ): Promise<void> {
   await assignRolePermissions(id, { menuIds, dataScope, deptIds })
 }
+
+/**
+ * 预览「某用户仅拥有该角色」时的数据范围。
+ *
+ * <p>只读接口：返回可见条数与生效部门，不返回数据行 ——
+ * 后者等于开了一个"用任意角色身份读任意数据"的口子，
+ * 而条数 + 生效部门已足够回答"范围配得对不对"。
+ *
+ * <p>⚠️ 用<b>账号</b>而不是用户 ID：主键是雪花 ID（19 位，超过 2^53），
+ * JavaScript 的数字无法精确表示 —— 从列表里拿到的 ID 再传回去会变成另一个数，
+ * 后端只能回答"用户不存在"。账号在租户内唯一，且让接口可读、可手工复现。
+ */
+export const simulateRoleDataScopeAction = (
+  roleId: number,
+  username: string
+): Promise<RoleSimulationResponse> => simulateRoleDataScope(roleId, { username })
 
 /** 可用角色（下拉用）。 */
 export const loadUsableRoles = () => listUsableRoles()

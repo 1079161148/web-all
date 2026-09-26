@@ -3,9 +3,13 @@ package com.webadmin.infrastructure.datascope;
 import com.baomidou.mybatisplus.extension.plugins.handler.MultiDataPermissionHandler;
 import com.webadmin.application.iam.port.PermissionCachePort.CachedPermissions;
 import com.webadmin.application.iam.security.PermissionResolver;
+import com.webadmin.application.iam.security.RoleSimulationContext;
+import com.webadmin.application.iam.security.SimulatedSubject;
 import com.webadmin.application.security.CurrentUser;
 import com.webadmin.application.security.CurrentUserPort;
+import com.webadmin.domain.iam.model.role.DataScope;
 import java.util.Optional;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import net.sf.jsqlparser.expression.Expression;
@@ -111,24 +115,49 @@ public class DataScopePermissionHandler implements MultiDataPermissionHandler {
         }
         CurrentUser current = currentOpt.get();
 
-        CachedPermissions permissions =
-                permissionResolver.resolve(current.tenantId(), current.userId());
+        // ④ 数据权限模拟（"以某角色预览可见数据"）：模拟主体优先于真实身份。
+        //
+        //    关键点是条件**仍然由本方法生成** —— 模拟不另写一套查询条件，
+        //    因此"预览"与"实际打开列表"在结构上不可能不一致
+        //    （若各写一套，迟早漂移成"预览 8 条、实际 12 条"，
+        //      而这个功能存在的全部意义就是让人相信预览结果）。
+        Optional<SimulatedSubject> simulated = RoleSimulationContext.current();
 
-        // ④ 超管豁免
-        if (permissions.superAdmin() && annotation.ignoreSuperAdmin()) {
-            return null;
+        long effectiveUserId;
+        Long effectiveDeptId;
+        DataScope scope;
+        Set<Long> customDeptIds;
+
+        if (simulated.isPresent()) {
+            SimulatedSubject subject = simulated.get();
+            effectiveUserId = subject.userId();
+            effectiveDeptId = subject.deptId();
+            scope = subject.scope();
+            customDeptIds = subject.customDeptIds();
+            // ⚠️ 模拟主体一律**不**继承超管豁免。
+            //    模拟通常由超管发起；若沿用调用者的豁免，拦截器会直接返回 null（不过滤），
+            //    于是"预览"显示全部数据 —— 功能失效，而且表现为"看起来一切正常"。
+        } else {
+            CachedPermissions permissions =
+                    permissionResolver.resolve(current.tenantId(), current.userId());
+
+            // ⑤ 超管豁免
+            if (permissions.superAdmin() && annotation.ignoreSuperAdmin()) {
+                return null;
+            }
+            effectiveUserId = current.userId();
+            effectiveDeptId = permissions.deptId();
+            scope = permissions.widestDataScope();
+            customDeptIds = permissions.customDeptIds();
         }
-
-        // 用 var 承接枚举，避免与同名注解产生 import 冲突
-        var scope = permissions.widestDataScope();
 
         String condition = conditionBuilder.build(
                 annotation.deptAlias(),
                 annotation.userAlias(),
                 scope,
-                current.userId(),
-                permissions.deptId(),
-                permissions.customDeptIds());
+                effectiveUserId,
+                effectiveDeptId,
+                customDeptIds);
 
         if (condition == null) {
             // ALL 范围：确实无需过滤

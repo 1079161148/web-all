@@ -5,13 +5,24 @@
  * OpenAPI spec version: v0
  */
 import type {
+  AgentRequest,
+  AnnounceRequest,
   AssignPermissionsRequest,
   AssignRolesRequest,
+  CaptchaResponse,
+  ChangePasswordRequest,
   ChangeRoleStatusRequest,
   ChangeStatusRequest,
+  ChatRequest,
   CloseTenantParams,
+  CollectRequest,
+  CollectResponse,
   ConfigRequest,
   ConfigResponse,
+  CreateExportTask200,
+  CreateImportTask200,
+  CreateImportTaskBody,
+  CreateImportTaskParams,
   CreateRoleRequest,
   CreateTenantRequest,
   CreateUserRequest,
@@ -22,40 +33,586 @@ import type {
   DictDataResponse,
   DictTypeRequest,
   DictTypeResponse,
+  ExportRequest,
+  FileResponse,
   GetConfigValues200,
   GetConfigValuesParams,
+  HeaderPreview,
+  IngestRequest,
+  JsonNode,
+  ListSurveyFilesParams,
   LoginRequest,
   LoginResult,
   MenuDTO,
   MenuRequest,
+  OpsTicket,
+  PageAuditLogsParams,
   PageConfigsParams,
   PageDictDataParams,
   PageDictTypesParams,
+  PageMyMessagesParams,
   PagePostsParams,
+  PageResultAuditLogView,
+  PageResultCollectResponse,
   PageResultConfigResponse,
   PageResultDictDataResponse,
   PageResultDictTypeResponse,
+  PageResultMessageViewResponse,
+  PageResultPaperResponse,
   PageResultPostResponse,
+  PageResultReportResponse,
   PageResultRoleResponse,
+  PageResultTaskResponse,
+  PageResultTemplateResponse,
   PageResultTenantResponse,
   PageResultUserResponse,
   PageRolesParams,
+  PageSurveyCollectsParams,
+  PageSurveyPapersParams,
+  PageSurveyReportsParams,
+  PageSurveyTasksParams,
+  PageSurveyTemplatesParams,
   PageTenantsParams,
   PageUsersParams,
+  PaperRequest,
+  PaperResponse,
+  PlanResponse,
   PostRequest,
   PostResponse,
+  PreviewImportHeadersBody,
+  ProvisionTenantRequest,
+  RefreshTokenRequest,
+  RegisterRequest,
   RenameTenantParams,
   RenewTenantRequest,
+  ReportRequest,
+  ReportResponse,
   ResetPasswordRequest,
   RoleResponse,
+  RoleSimulationResponse,
+  SessionViewResponse,
+  SimulateRoleDataScopeParams,
+  SseEmitter,
+  StreamMessagesParams,
+  Summary,
   SuspendTenantParams,
+  TaskOption,
+  TaskRequest,
+  TaskResponse,
+  TemplateRequest,
+  TemplateResponse,
+  TenantProvisionResponse,
   TenantResponse,
+  TenantUsageResponse,
+  TransferTaskView,
   UpdateRoleRequest,
   UpdateUserRequest,
+  UploadSurveyFileBody,
+  UploadSurveyFileParams,
   UserResponse
 } from './model';
 
 import { request } from '../client';
+
+export const getGetSurveyTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/templates/${id}`
+}
+
+/**
+ * @summary 查询模板详情（含富文本正文）
+ */
+export const getSurveyTemplate = async (id: number, options?: Parameters<typeof request>[1]): Promise<TemplateResponse> => {
+
+  return request<TemplateResponse>(getGetSurveyTemplateUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getUpdateSurveyTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/templates/${id}`
+}
+
+/**
+ * @summary 修改模板
+ */
+export const updateSurveyTemplate = async (id: number,
+    templateRequest: TemplateRequest, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getUpdateSurveyTemplateUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(templateRequest)
+  }
+);}
+
+
+
+export const getDeleteSurveyTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/templates/${id}`
+}
+
+/**
+ * @summary 删除模板
+ */
+export const deleteSurveyTemplate = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getDeleteSurveyTemplateUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export const getGetSurveyTaskUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/tasks/${id}`
+}
+
+/**
+ * @summary 查询任务详情
+ */
+export const getSurveyTask = async (id: number, options?: Parameters<typeof request>[1]): Promise<TaskResponse> => {
+
+  return request<TaskResponse>(getGetSurveyTaskUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getUpdateSurveyTaskUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/tasks/${id}`
+}
+
+/**
+ * @summary 修改调研任务
+ */
+export const updateSurveyTask = async (id: number,
+    taskRequest: TaskRequest, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getUpdateSurveyTaskUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(taskRequest)
+  }
+);}
+
+
+
+export const getDeleteSurveyTaskUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/tasks/${id}`
+}
+
+/**
+ * @summary 删除调研任务
+ */
+export const deleteSurveyTask = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getDeleteSurveyTaskUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export const getGetSurveyReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/reports/${id}`
+}
+
+/**
+ * @summary 查询报告详情（含富文本正文）
+ */
+export const getSurveyReport = async (id: number, options?: Parameters<typeof request>[1]): Promise<ReportResponse> => {
+
+  return request<ReportResponse>(getGetSurveyReportUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getUpdateSurveyReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/reports/${id}`
+}
+
+/**
+ * @summary 修改报告
+ */
+export const updateSurveyReport = async (id: number,
+    reportRequest: ReportRequest, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getUpdateSurveyReportUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reportRequest)
+  }
+);}
+
+
+
+export const getDeleteSurveyReportUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/reports/${id}`
+}
+
+/**
+ * @summary 删除报告
+ */
+export const deleteSurveyReport = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getDeleteSurveyReportUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export const getGetSurveyPaperUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/papers/${id}`
+}
+
+/**
+ * @summary 查询问卷详情（含富文本正文）
+ */
+export const getSurveyPaper = async (id: number, options?: Parameters<typeof request>[1]): Promise<PaperResponse> => {
+
+  return request<PaperResponse>(getGetSurveyPaperUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getUpdateSurveyPaperUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/papers/${id}`
+}
+
+/**
+ * @summary 修改问卷
+ */
+export const updateSurveyPaper = async (id: number,
+    paperRequest: PaperRequest, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getUpdateSurveyPaperUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(paperRequest)
+  }
+);}
+
+
+
+export const getDeleteSurveyPaperUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/papers/${id}`
+}
+
+/**
+ * @summary 删除问卷
+ */
+export const deleteSurveyPaper = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getDeleteSurveyPaperUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export const getGetSurveyCollectUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/collects/${id}`
+}
+
+/**
+ * @summary 查询采集记录详情
+ */
+export const getSurveyCollect = async (id: number, options?: Parameters<typeof request>[1]): Promise<CollectResponse> => {
+
+  return request<CollectResponse>(getGetSurveyCollectUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getUpdateSurveyCollectUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/collects/${id}`
+}
+
+/**
+ * @summary 修改采集记录
+ */
+export const updateSurveyCollect = async (id: number,
+    collectRequest: CollectRequest, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getUpdateSurveyCollectUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(collectRequest)
+  }
+);}
+
+
+
+export const getDeleteSurveyCollectUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/collects/${id}`
+}
+
+/**
+ * @summary 删除采集记录
+ */
+export const deleteSurveyCollect = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getDeleteSurveyCollectUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export const getGetUserPreferenceUrl = (key: string,) => {
+
+
+
+
+  return `/api/v1/profile/preferences/${key}`
+}
+
+/**
+ * 未设置时 data 为 null（区别于'设为空'）。键格式：小写字母/数字/: _ . -，≤64 字符
+ * @summary 读取一项偏好
+ */
+export const getUserPreference = async (key: string, options?: Parameters<typeof request>[1]): Promise<JsonNode> => {
+
+  return request<JsonNode>(getGetUserPreferenceUrl(key),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getPutUserPreferenceUrl = (key: string,) => {
+
+
+
+
+  return `/api/v1/profile/preferences/${key}`
+}
+
+/**
+ * 请求体为任意 JSON 值；上限 8KB
+ * @summary 写入一项偏好（upsert）
+ */
+export const putUserPreference = async (key: string,
+    jsonNode: JsonNode, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getPutUserPreferenceUrl(key),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(jsonNode)
+  }
+);}
+
+
 
 export const getGetDictTypeUrl = (id: number,) => {
 
@@ -524,7 +1081,7 @@ export const getResetUserPasswordUrl = (id: number,) => {
 }
 
 /**
- * 不传新密码时重置为平台初始密码。重置后该用户的权限缓存会被清除
+ * 不传新密码时重置为平台初始密码。重置后该用户的权限缓存会被清除，且其全部在线会话与令牌立即失效
  * @summary 重置用户密码
  */
 export const resetUserPassword = async (id: number,
@@ -1157,6 +1714,880 @@ export const deleteDept = async (id: number, options?: Parameters<typeof request
 
 
 
+export const getChangeMyPasswordUrl = () => {
+
+
+
+
+  return `/api/v1/auth/password`
+}
+
+/**
+ * 需提供原密码（防止会话被劫持后直接改密夺号）。修改成功后该用户的<b>全部会话与令牌立即失效</b>，包括当前设备 —— 需要重新登录。这是刻意的：改密码的语义就是把其它地方的登录一并作废
+ * @summary 修改当前用户密码
+ */
+export const changeMyPassword = async (changePasswordRequest: ChangePasswordRequest, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getChangeMyPasswordUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changePasswordRequest)
+  }
+);}
+
+
+
+export const getRetryImportFailuresUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/tools/transfers/${id}/retry`
+}
+
+/**
+ * 部分成功后，只重跑此前失败的行（通常用户已在源数据修复问题）
+ * @summary 重试失败行
+ */
+export const retryImportFailures = async (id: string, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getRetryImportFailuresUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getConfirmImportTaskUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/tools/transfers/${id}/confirm`
+}
+
+/**
+ * 只导入校验合规的行，分批落库；单行失败按行记录（部分成功语义）
+ * @summary 确认导入（校验通过后）
+ */
+export const confirmImportTask = async (id: string, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getConfirmImportTaskUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getCancelTransferTaskUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/tools/transfers/${id}/cancel`
+}
+
+/**
+ * 工作线程在批次间隙检查取消标记 —— 已写入的数据不会回滚
+ * @summary 取消任务
+ */
+export const cancelTransferTask = async (id: string, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getCancelTransferTaskUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getCreateImportTaskUrl = (params?: CreateImportTaskParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/tools/transfers/import?${stringifiedParams}` : `/api/v1/tools/transfers/import`
+}
+
+/**
+ * 异步执行：解析 → 逐行校验（精确到行列）→ 产出错误清单与合规行预览。校验阶段不写任何业务数据；确认导入需再调 confirm 接口。mapping 为可选列映射（按模板列序给出对应文件列下标，-1=缺席，逗号分隔）；不传则按模板列序直传（表头与模板一致的场景）
+ * @summary 上传文件并创建导入任务
+ */
+export const createImportTask = async (createImportTaskBody?: CreateImportTaskBody,
+    params?: CreateImportTaskParams, options?: Parameters<typeof request>[1]): Promise<CreateImportTask200> => {
+    const formData = new FormData();
+if(createImportTaskBody?.file !== undefined) {
+ formData.append(`file`, createImportTaskBody.file);
+ }
+
+  return request<CreateImportTask200>(getCreateImportTaskUrl(params),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+export const getPreviewImportHeadersUrl = () => {
+
+
+
+
+  return `/api/v1/tools/transfers/import-headers`
+}
+
+/**
+ * 只读表头与前 3 行，不建任务 —— 供列映射界面使用；表头与模板不一致时由用户手动映射
+ * @summary 解析文件表头（列映射预览）
+ */
+export const previewImportHeaders = async (previewImportHeadersBody?: PreviewImportHeadersBody, options?: Parameters<typeof request>[1]): Promise<HeaderPreview> => {
+    const formData = new FormData();
+if(previewImportHeadersBody?.file !== undefined) {
+ formData.append(`file`, previewImportHeadersBody.file);
+ }
+
+  return request<HeaderPreview>(getPreviewImportHeadersUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+export const getCreateExportTaskUrl = () => {
+
+
+
+
+  return `/api/v1/tools/transfers/export`
+}
+
+/**
+ * 范围：ALL（全部）/ PAGE / SELECTED（前端传具体 id 列表）。fields 为导出列（空 = 全部字段）。异步生成，完成后经 download 接口取件
+ * @summary 创建导出任务
+ */
+export const createExportTask = async (exportRequest: ExportRequest, options?: Parameters<typeof request>[1]): Promise<CreateExportTask200> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<CreateExportTask200>(getCreateExportTaskUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(exportRequest)
+  }
+);}
+
+
+
+export const getPageSurveyTemplatesUrl = (params?: PageSurveyTemplatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/survey/templates?${stringifiedParams}` : `/api/v1/survey/templates`
+}
+
+/**
+ * @summary 分页查询模板（不含正文）
+ */
+export const pageSurveyTemplates = async (params?: PageSurveyTemplatesParams, options?: Parameters<typeof request>[1]): Promise<PageResultTemplateResponse> => {
+
+  return request<PageResultTemplateResponse>(getPageSurveyTemplatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getCreateSurveyTemplateUrl = () => {
+
+
+
+
+  return `/api/v1/survey/templates`
+}
+
+/**
+ * @summary 新增模板
+ */
+export const createSurveyTemplate = async (templateRequest: TemplateRequest, options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getCreateSurveyTemplateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(templateRequest)
+  }
+);}
+
+
+
+export const getApplySurveyTemplateUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/templates/${id}/apply`
+}
+
+/**
+ * 返回模板全文并把引用次数 +1。前端据此把正文复制进问卷编辑器
+ * @summary 套用模板
+ */
+export const applySurveyTemplate = async (id: number, options?: Parameters<typeof request>[1]): Promise<TemplateResponse> => {
+
+  return request<TemplateResponse>(getApplySurveyTemplateUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getBatchCreateSurveyTemplatesUrl = () => {
+
+
+
+
+  return `/api/v1/survey/templates/batch`
+}
+
+/**
+ * @summary 批量导入模板（Excel 导入用）
+ */
+export const batchCreateSurveyTemplates = async (templateRequest: TemplateRequest[], options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getBatchCreateSurveyTemplatesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(templateRequest)
+  }
+);}
+
+
+
+export const getPageSurveyTasksUrl = (params?: PageSurveyTasksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/survey/tasks?${stringifiedParams}` : `/api/v1/survey/tasks`
+}
+
+/**
+ * @summary 分页查询调研任务
+ */
+export const pageSurveyTasks = async (params?: PageSurveyTasksParams, options?: Parameters<typeof request>[1]): Promise<PageResultTaskResponse> => {
+
+  return request<PageResultTaskResponse>(getPageSurveyTasksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getCreateSurveyTaskUrl = () => {
+
+
+
+
+  return `/api/v1/survey/tasks`
+}
+
+/**
+ * @summary 新增调研任务
+ */
+export const createSurveyTask = async (taskRequest: TaskRequest, options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getCreateSurveyTaskUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(taskRequest)
+  }
+);}
+
+
+
+export const getBatchCreateSurveyTasksUrl = () => {
+
+
+
+
+  return `/api/v1/survey/tasks/batch`
+}
+
+/**
+ * Excel 导入用。任一行失败则整批回滚，错误消息带行号，便于改完文件重传
+ * @summary 批量导入调研任务
+ */
+export const batchCreateSurveyTasks = async (taskRequest: TaskRequest[], options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getBatchCreateSurveyTasksUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(taskRequest)
+  }
+);}
+
+
+
+export const getPageSurveyReportsUrl = (params?: PageSurveyReportsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/survey/reports?${stringifiedParams}` : `/api/v1/survey/reports`
+}
+
+/**
+ * @summary 分页查询报告（不含正文）
+ */
+export const pageSurveyReports = async (params?: PageSurveyReportsParams, options?: Parameters<typeof request>[1]): Promise<PageResultReportResponse> => {
+
+  return request<PageResultReportResponse>(getPageSurveyReportsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getCreateSurveyReportUrl = () => {
+
+
+
+
+  return `/api/v1/survey/reports`
+}
+
+/**
+ * @summary 新增报告
+ */
+export const createSurveyReport = async (reportRequest: ReportRequest, options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getCreateSurveyReportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reportRequest)
+  }
+);}
+
+
+
+export const getBatchCreateSurveyReportsUrl = () => {
+
+
+
+
+  return `/api/v1/survey/reports/batch`
+}
+
+/**
+ * @summary 批量导入报告（Excel 导入用）
+ */
+export const batchCreateSurveyReports = async (reportRequest: ReportRequest[], options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getBatchCreateSurveyReportsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reportRequest)
+  }
+);}
+
+
+
+export const getPageSurveyPapersUrl = (params?: PageSurveyPapersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/survey/papers?${stringifiedParams}` : `/api/v1/survey/papers`
+}
+
+/**
+ * @summary 分页查询问卷（不含正文）
+ */
+export const pageSurveyPapers = async (params?: PageSurveyPapersParams, options?: Parameters<typeof request>[1]): Promise<PageResultPaperResponse> => {
+
+  return request<PageResultPaperResponse>(getPageSurveyPapersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getCreateSurveyPaperUrl = () => {
+
+
+
+
+  return `/api/v1/survey/papers`
+}
+
+/**
+ * @summary 新增问卷
+ */
+export const createSurveyPaper = async (paperRequest: PaperRequest, options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getCreateSurveyPaperUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(paperRequest)
+  }
+);}
+
+
+
+export const getBumpSurveyPaperVersionUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/papers/${id}/version`
+}
+
+/**
+ * 版本号 +1 并回到草稿态。问卷发布后不就地覆盖，避免历史回收数据与题目对不上
+ * @summary 问卷升版
+ */
+export const bumpSurveyPaperVersion = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getBumpSurveyPaperVersionUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getBatchCreateSurveyPapersUrl = () => {
+
+
+
+
+  return `/api/v1/survey/papers/batch`
+}
+
+/**
+ * @summary 批量导入问卷（任一行失败整批回滚）
+ */
+export const batchCreateSurveyPapers = async (paperRequest: PaperRequest[], options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getBatchCreateSurveyPapersUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(paperRequest)
+  }
+);}
+
+
+
+export const getListSurveyFilesUrl = (params: ListSurveyFilesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/survey/files?${stringifiedParams}` : `/api/v1/survey/files`
+}
+
+/**
+ * @summary 按业务对象查询附件
+ */
+export const listSurveyFiles = async (params: ListSurveyFilesParams, options?: Parameters<typeof request>[1]): Promise<FileResponse[]> => {
+
+  return request<FileResponse[]>(getListSurveyFilesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getUploadSurveyFileUrl = (params: UploadSurveyFileParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/survey/files?${stringifiedParams}` : `/api/v1/survey/files`
+}
+
+/**
+ * 单文件上限 20MB。落盘路径由服务端决定：{租户}/{业务类型}/{年月}/{uuid}.{ext}
+ * @summary 上传附件
+ */
+export const uploadSurveyFile = async (params: UploadSurveyFileParams,
+    uploadSurveyFileBody?: UploadSurveyFileBody, options?: Parameters<typeof request>[1]): Promise<FileResponse> => {
+    const formData = new FormData();
+if(uploadSurveyFileBody?.file !== undefined) {
+ formData.append(`file`, uploadSurveyFileBody.file);
+ }
+
+  return request<FileResponse>(getUploadSurveyFileUrl(params),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+export const getPageSurveyCollectsUrl = (params?: PageSurveyCollectsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/survey/collects?${stringifiedParams}` : `/api/v1/survey/collects`
+}
+
+/**
+ * @summary 分页查询采集记录
+ */
+export const pageSurveyCollects = async (params?: PageSurveyCollectsParams, options?: Parameters<typeof request>[1]): Promise<PageResultCollectResponse> => {
+
+  return request<PageResultCollectResponse>(getPageSurveyCollectsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getCreateSurveyCollectUrl = () => {
+
+
+
+
+  return `/api/v1/survey/collects`
+}
+
+/**
+ * taskName 由后端按 taskId 取任务名快照，前端不必传
+ * @summary 新增采集记录
+ */
+export const createSurveyCollect = async (collectRequest: CollectRequest, options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getCreateSurveyCollectUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(collectRequest)
+  }
+);}
+
+
+
+export const getBatchCreateSurveyCollectsUrl = () => {
+
+
+
+
+  return `/api/v1/survey/collects/batch`
+}
+
+/**
+ * @summary 批量导入采集记录（Excel 导入用）
+ */
+export const batchCreateSurveyCollects = async (collectRequest: CollectRequest[], options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getBatchCreateSurveyCollectsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(collectRequest)
+  }
+);}
+
+
+
 export const getPageDictTypesUrl = (params?: PageDictTypesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -1366,6 +2797,133 @@ return request<number>(getCreateConfigUrl(),
 
 
 
+export const getIngestFeEventsUrl = () => {
+
+
+
+
+  return `/api/v1/observability/events`
+}
+
+/**
+ * type ∈ api/route/error/vital；userId 由令牌解析，前端传什么都不采信
+ * @summary 批量上报前端事件（≤50 条/批）
+ */
+export const ingestFeEvents = async (ingestRequest: IngestRequest, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<unknown>(getIngestFeEventsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(ingestRequest)
+  }
+);}
+
+
+
+export const getMarkMessageReadUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/messages/${id}/read`
+}
+
+/**
+ * 幂等。传入不存在的或不属于自己的消息 ID 同样成功（不泄露存在性）
+ * @summary 标记单条已读
+ */
+export const markMessageRead = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getMarkMessageReadUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getMarkAllMessagesReadUrl = () => {
+
+
+
+
+  return `/api/v1/messages/read-all`
+}
+
+/**
+ * @summary 全部标记已读
+ */
+export const markAllMessagesRead = async ( options?: Parameters<typeof request>[1]): Promise<number> => {
+
+  return request<number>(getMarkAllMessagesReadUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getAnnounceMessageUrl = () => {
+
+
+
+
+  return `/api/v1/messages/announce`
+}
+
+/**
+ * 发给本租户全部用户（按接收者扇出，一人一行）并实时推送。返回实际落库的人数
+ * @summary 发布公告
+ */
+export const announceMessage = async (announceRequest: AnnounceRequest, options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getAnnounceMessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(announceRequest)
+  }
+);}
+
+
+
 export const getPageUsersUrl = (params?: PageUsersParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -1503,6 +3061,45 @@ return request<number>(getCreateTenantUrl(),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(createTenantRequest)
+  }
+);}
+
+
+
+export const getProvisionTenantUrl = () => {
+
+
+
+
+  return `/api/v1/iam/tenants/provision`
+}
+
+/**
+ * 开通向导：创建租户、初始化租户管理员（SUPER_ADMIN 角色与管理员账号，计入 USER 配额）并激活，全部在一个事务内完成。初始密码明文只在本次响应中返回，之后只能重置
+ * @summary 一键开通租户
+ */
+export const provisionTenant = async (provisionTenantRequest: ProvisionTenantRequest, options?: Parameters<typeof request>[1]): Promise<TenantProvisionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<TenantProvisionResponse>(getProvisionTenantUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(provisionTenantRequest)
   }
 );}
 
@@ -1777,6 +3374,183 @@ return request<number>(getCreateDeptUrl(),
 
 
 
+export const getReleaseOpsTicketUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/dispatch/tickets/${id}/release`
+}
+
+/**
+ * 看板"处理中 → 待处理"拖拽的后端语义。条件 UPDATE：非本人或非 CLAIMED 状态一律失败
+ * @summary 放回待处理池（仅接单人）
+ */
+export const releaseOpsTicket = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getReleaseOpsTicketUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getCompleteOpsTicketUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/dispatch/tickets/${id}/complete`
+}
+
+/**
+ * @summary 办结（仅接单人）
+ */
+export const completeOpsTicket = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getCompleteOpsTicketUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getClaimOpsTicketUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/dispatch/tickets/${id}/claim`
+}
+
+/**
+ * 条件 UPDATE 保证原子性：非 PENDING 状态一律失败并返回明确错误
+ * @summary 抢单（原子）
+ */
+export const claimOpsTicket = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getClaimOpsTicketUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export const getRegisterUrl = () => {
+
+
+
+
+  return `/api/v1/auth/register`
+}
+
+/**
+ * 在请求头指定的租户下创建账号。<b>注册不等于登录</b>：不签发任何令牌，新账号也不分配任何角色（登录后菜单为空），需管理员在用户管理中授权后才可用。需通过图形验证码；同一 IP 有频率限制
+ * @summary 自助注册
+ */
+export const register = async (registerRequest: RegisterRequest, options?: Parameters<typeof request>[1]): Promise<number> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<number>(getRegisterUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(registerRequest)
+  }
+);}
+
+
+
+export const getRefreshTokenUrl = () => {
+
+
+
+
+  return `/api/v1/auth/refresh`
+}
+
+/**
+ * 用刷新令牌换取新的访问/刷新令牌对（轮换语义：旧刷新令牌立即作废）。旧令牌被再次使用会触发重放保护 —— 整个令牌族被吊销、相关会话被强制下线。刷新令牌优先从 HttpOnly Cookie 读取；请求体形式保留给非浏览器客户端与滚动升级期间的旧版前端。新令牌同样经 Cookie 下发，不在响应体中返回。本端点是认证入口，在公开清单中，且不要求携带访问令牌
+ * @summary 刷新令牌
+ */
+export const refreshToken = async (refreshTokenRequest?: RefreshTokenRequest, options?: Parameters<typeof request>[1]): Promise<LoginResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<LoginResult>(getRefreshTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(refreshTokenRequest)
+  }
+);}
+
+
+
+export const getLogoutUrl = () => {
+
+
+
+
+  return `/api/v1/auth/logout`
+}
+
+/**
+ * 注销当前会话并作废其刷新令牌，同时清除刷新令牌 Cookie。幂等：重复调用或会话已不存在时同样成功
+ * @summary 退出登录
+ */
+export const logout = async ( options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getLogoutUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
 export const getLoginUrl = () => {
 
 
@@ -1786,7 +3560,7 @@ export const getLoginUrl = () => {
 }
 
 /**
- * 校验账号密码并签发访问令牌。连续失败达阈值会锁定账号
+ * 校验图形验证码与账号密码并签发访问令牌。连续失败达阈值会锁定账号。刷新令牌通过 HttpOnly Cookie 下发，不在响应体中返回。rememberDays 决定免登录天数（1/7/30，白名单校验）；留空表示不记住
  * @summary 登录
  */
 export const login = async (loginRequest: LoginRequest, options?: Parameters<typeof request>[1]): Promise<LoginResult> => {
@@ -1811,6 +3585,289 @@ return request<LoginResult>(getLoginUrl(),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(loginRequest)
+  }
+);}
+
+
+
+export const getAiChatStreamUrl = () => {
+
+
+
+
+  return `/api/v1/ai/chat`
+}
+
+/**
+ * 未配置 Key 时进入演示模式（meta=demo）：流式 UX 完整、回答明示来源；工单上下文在两种模式下都来自真实数据库
+ * @summary AI 对话（SSE 流式）
+ */
+export const aiChatStream = async (chatRequest: ChatRequest, options?: Parameters<typeof request>[1]): Promise<SseEmitter> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<SseEmitter>(getAiChatStreamUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(chatRequest)
+  }
+);}
+
+
+
+export const getAiAgentStreamUrl = () => {
+
+
+
+
+  return `/api/v1/ai/agent`
+}
+
+/**
+ * 事件序列：meta（real/demo）→ step（每次工具调用：工具/参数/结果）→ delta（最终回答）→ done。工具执行会真实改变系统状态
+ * @summary AI 指挥（Agent 循环，SSE 流式）
+ */
+export const aiAgentStream = async (agentRequest: AgentRequest, options?: Parameters<typeof request>[1]): Promise<SseEmitter> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return request<SseEmitter>(getAiAgentStreamUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(agentRequest)
+  }
+);}
+
+
+
+export const getGetTransferTaskUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/tools/transfers/${id}`
+}
+
+/**
+ * 轮询端点：status/progress/phase + 错误清单（前 500 条）+ 预览行
+ * @summary 查询任务进度
+ */
+export const getTransferTask = async (id: string, options?: Parameters<typeof request>[1]): Promise<TransferTaskView> => {
+
+  return request<TransferTaskView>(getGetTransferTaskUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getDownloadTransferErrorReportUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/tools/transfers/${id}/error-report`
+}
+
+/**
+ * xlsx：行号 / 列 / 原值 / 错误原因 —— 用户拿它回源修正后重试
+ * @summary 下载错误报告
+ */
+export const downloadTransferErrorReport = async (id: string, options?: Parameters<typeof request>[1]): Promise<string> => {
+
+  return request<string>(getDownloadTransferErrorReportUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getDownloadTransferResultUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/tools/transfers/${id}/download`
+}
+
+/**
+ * 任务 DONE 后可调用。文件在任务生命周期内可重复下载
+ * @summary 下载导出文件
+ */
+export const downloadTransferResult = async (id: string, options?: Parameters<typeof request>[1]): Promise<string> => {
+
+  return request<string>(getDownloadTransferResultUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getDownloadTransferTemplateUrl = () => {
+
+
+
+
+  return `/api/v1/tools/transfers/template`
+}
+
+/**
+ * xlsx 模板：表头 + 两行示例。示例行展示了每列的合法取值格式
+ * @summary 下载导入模板
+ */
+export const downloadTransferTemplate = async ( options?: Parameters<typeof request>[1]): Promise<string> => {
+
+  return request<string>(getDownloadTransferTemplateUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getPageAuditLogsUrl = (params?: PageAuditLogsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/tools/audit-logs?${stringifiedParams}` : `/api/v1/tools/audit-logs`
+}
+
+/**
+ * @summary 分页查询操作审计（最近优先）
+ */
+export const pageAuditLogs = async (params?: PageAuditLogsParams, options?: Parameters<typeof request>[1]): Promise<PageResultAuditLogView> => {
+
+  return request<PageResultAuditLogView>(getPageAuditLogsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getListSurveyTaskOptionsUrl = () => {
+
+
+
+
+  return `/api/v1/survey/tasks/options`
+}
+
+/**
+ * 供数据采集、报告表单选择所属任务；按创建时间倒序，最多 200 条
+ * @summary 全部任务（下拉选项）
+ */
+export const listSurveyTaskOptions = async ( options?: Parameters<typeof request>[1]): Promise<TaskOption[]> => {
+
+  return request<TaskOption[]>(getListSurveyTaskOptionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getGetSurveyFileUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/files/${id}`
+}
+
+/**
+ * @summary 查询附件元数据
+ */
+export const getSurveyFile = async (id: number, options?: Parameters<typeof request>[1]): Promise<FileResponse> => {
+
+  return request<FileResponse>(getGetSurveyFileUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getDownloadSurveyFileUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/survey/files/${id}/content`
+}
+
+/**
+ * 图片可直接作为富文本 img src 使用
+ * @summary 下载/预览附件内容
+ */
+export const downloadSurveyFile = async (id: number, options?: Parameters<typeof request>[1]): Promise<string> => {
+
+  return request<string>(getDownloadSurveyFileUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
   }
 );}
 
@@ -1879,6 +3936,145 @@ export const getConfigValues = async (params: GetConfigValuesParams, options?: P
 
 
 
+export const getGetObservabilitySummaryUrl = () => {
+
+
+
+
+  return `/api/v1/observability/summary`
+}
+
+/**
+ * 慢接口 Top10（近 1 小时按平均耗时）/ 最近 50 条前端错误 / 页面访问 Top10（近 1 天）
+ * @summary 聚合视图
+ */
+export const getObservabilitySummary = async ( options?: Parameters<typeof request>[1]): Promise<Summary> => {
+
+  return request<Summary>(getGetObservabilitySummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getPageMyMessagesUrl = (params?: PageMyMessagesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/messages?${stringifiedParams}` : `/api/v1/messages`
+}
+
+/**
+ * 按创建时间倒序；isRead 可筛选未读/已读
+ * @summary 我的收件箱
+ */
+export const pageMyMessages = async (params?: PageMyMessagesParams, options?: Parameters<typeof request>[1]): Promise<PageResultMessageViewResponse> => {
+
+  return request<PageResultMessageViewResponse>(getPageMyMessagesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getGetUnreadCountUrl = () => {
+
+
+
+
+  return `/api/v1/messages/unread-count`
+}
+
+/**
+ * 顶栏角标的数据源。收到实时推送信号后前端会重新拉取
+ * @summary 未读数
+ */
+export const getUnreadCount = async ( options?: Parameters<typeof request>[1]): Promise<number> => {
+
+  return request<number>(getGetUnreadCountUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getStreamMessagesUrl = (params: StreamMessagesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/messages/stream?${stringifiedParams}` : `/api/v1/messages/stream`
+}
+
+/**
+ * 公开端点，但必须出示有效票据。推送的只是刷新信号，客户端收到后重新拉取未读数与列表
+ * @summary 消息实时流（SSE）
+ */
+export const streamMessages = async (params: StreamMessagesParams, options?: Parameters<typeof request>[1]): Promise<SseEmitter> => {
+
+  return request<SseEmitter>(getStreamMessagesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getIssueMessageStreamTicketUrl = () => {
+
+
+
+
+  return `/api/v1/messages/sse-ticket`
+}
+
+/**
+ * 一次性、30 秒有效、绑定当前用户。EventSource 不能带请求头，前端先取票据再用它开流
+ * @summary 签发 SSE 连接票据
+ */
+export const issueMessageStreamTicket = async ( options?: Parameters<typeof request>[1]): Promise<string> => {
+
+  return request<string>(getIssueMessageStreamTicketUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
 export const getGetTenantUrl = (id: number,) => {
 
 
@@ -1893,6 +4089,90 @@ export const getGetTenantUrl = (id: number,) => {
 export const getTenant = async (id: number, options?: Parameters<typeof request>[1]): Promise<TenantResponse> => {
 
   return request<TenantResponse>(getGetTenantUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getGetTenantUsageUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/iam/tenants/${id}/usage`
+}
+
+/**
+ * 各配额维度的总量/已用/剩余、实时用户数与有效状态。有效状态会把『ACTIVE 但已过有效期』直接判为 EXPIRED（脏读防护）
+ * @summary 租户用量（看板）
+ */
+export const getTenantUsage = async (id: number, options?: Parameters<typeof request>[1]): Promise<TenantUsageResponse> => {
+
+  return request<TenantUsageResponse>(getGetTenantUsageUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getListTenantPlansUrl = () => {
+
+
+
+
+  return `/api/v1/iam/tenants/plans`
+}
+
+/**
+ * 开通向导的套餐下拉与用量对比使用。配额上限来自套餐定义
+ * @summary 查询可用套餐
+ */
+export const listTenantPlans = async ( options?: Parameters<typeof request>[1]): Promise<PlanResponse[]> => {
+
+  return request<PlanResponse[]>(getListTenantPlansUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getSimulateRoleDataScopeUrl = (id: number,
+    params: SimulateRoleDataScopeParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/iam/roles/${id}/simulation?${stringifiedParams}` : `/api/v1/iam/roles/${id}/simulation`
+}
+
+/**
+ * 以「角色 + 某个用户账号」为输入，返回该角色在该用户位置上可见的数据条数与生效部门。过滤条件由与真实列表相同的拦截器产生，因此结果与实际打开列表一致；仅返回统计，不返回数据行。停用角色与超管角色会被拒绝。入参用账号而不是用户 ID：主键是雪花 ID，浏览器端的数字无法精确表示它
+ * @summary 预览角色的数据范围
+ */
+export const simulateRoleDataScope = async (id: number,
+    params: SimulateRoleDataScopeParams, options?: Parameters<typeof request>[1]): Promise<RoleSimulationResponse> => {
+
+  return request<RoleSimulationResponse>(getSimulateRoleDataScopeUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -1943,6 +4223,55 @@ export const getListUsablePostsUrl = () => {
 export const listUsablePosts = async ( options?: Parameters<typeof request>[1]): Promise<PostResponse[]> => {
 
   return request<PostResponse[]>(getListUsablePostsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getListOpsTicketsUrl = () => {
+
+
+
+
+  return `/api/v1/dispatch/tickets`
+}
+
+/**
+ * @summary 工单列表（最近 100 条，含惰性 SLA 升级）
+ */
+export const listOpsTickets = async ( options?: Parameters<typeof request>[1]): Promise<OpsTicket[]> => {
+
+  return request<OpsTicket[]>(getListOpsTicketsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getListMySessionsUrl = () => {
+
+
+
+
+  return `/api/v1/auth/sessions`
+}
+
+/**
+ * 按最后活跃时间倒序。current=true 的那条是本次请求所在会话，注销它等价于退出登录
+ * @summary 我的在线会话
+ */
+export const listMySessions = async ( options?: Parameters<typeof request>[1]): Promise<SessionViewResponse[]> => {
+
+  return request<SessionViewResponse[]>(getListMySessionsUrl(),
   {
     ...options,
     method: 'GET'
@@ -2020,6 +4349,81 @@ export const getCurrentUser = async ( options?: Parameters<typeof request>[1]): 
   {
     ...options,
     method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getGetLoginCaptchaUrl = () => {
+
+
+
+
+  return `/api/v1/auth/captcha`
+}
+
+/**
+ * 返回验证码 id 与 Base64 PNG 图片。验证码<b>一次性</b>：无论校验成功与否，使用后立即失效，需重新获取。登录时把 id 与用户输入一起提交给 /login
+ * @summary 获取登录图形验证码
+ */
+export const getLoginCaptcha = async ( options?: Parameters<typeof request>[1]): Promise<CaptchaResponse> => {
+
+  return request<CaptchaResponse>(getGetLoginCaptchaUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export const getForceUserLogoutUrl = (id: number,) => {
+
+
+
+
+  return `/api/v1/iam/users/${id}/sessions`
+}
+
+/**
+ * 提升该用户的令牌版本号，并注销其全部会话与刷新令牌：已签发的访问令牌立即失效，且持久生效（Redis 清库也不会恢复）。适用于怀疑令牌泄露、需要立即阻断某账号的场景；常规限制请使用「停用」
+ * @summary 强制用户下线
+ */
+export const forceUserLogout = async (id: number, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getForceUserLogoutUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export const getRevokeMySessionUrl = (sessionId: string,) => {
+
+
+
+
+  return `/api/v1/auth/sessions/${sessionId}`
+}
+
+/**
+ * 用于"把某台设备踢下线"。传入当前会话等价于退出登录；传入不存在的会话 ID 静默成功（不泄露会话存在性）
+ * @summary 注销我的某个会话
+ */
+export const revokeMySession = async (sessionId: string, options?: Parameters<typeof request>[1]): Promise<unknown> => {
+
+  return request<unknown>(getRevokeMySessionUrl(sessionId),
+  {
+    ...options,
+    method: 'DELETE'
 
 
   }

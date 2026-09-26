@@ -68,12 +68,14 @@ public class TenantPO {
     // 审计字段
     // ------------------------------------------------------------------
 
+    @TableField(fill = FieldFill.INSERT)
     private Long createBy;
 
     /** 由 {@code auditMetaObjectHandler} 自动填充。 */
     @TableField(fill = FieldFill.INSERT)
     private Instant createTime;
 
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private Long updateBy;
 
     @TableField(fill = FieldFill.INSERT_UPDATE)

@@ -118,13 +118,45 @@ export function useDict<T extends string>(...dictTypes: T[]): Record<T, Ref<Dict
 }
 
 /**
- * 同步读取某个字典的响应式选项（供 {@code DictTag} 这类"只需要读"的场景使用）。
+ * 从未加载过的字典类型。用于「首次访问时自动加载，之后不再重复请求」。
+ */
+const loadedTypes = new Set<string>()
+
+/**
+ * 读取某个字典的响应式选项，**首次访问时自动触发加载**。
  *
- * <p>不会触发加载 —— 加载应由页面用 {@link useDict} 显式声明。
- * 这样"哪些字典被这个页面用到"在代码里是可见的，而不是散落在各个子组件里隐式触发。
+ * <h3>为什么改成自动加载（这是一次修正）</h3>
+ * 早先的版本要求页面先用 {@link useDict} 显式声明，理由是"让依赖可见"。
+ * 实践下来这个理由站不住：
+ * <ul>
+ *   <li>{@code <DictTag dict-type="sys_user_status" :value="row.status" />} 是<b>自解释</b>的 ——
+ *       组件名与 dict-type 已经把依赖说清楚了，再要求页面顶部补一句声明属于重复</li>
+ *   <li>漏声明的后果是<b>标签静默显示成码值</b>（不报错、不空白），
+ *       而"忘了在哪一行加声明"极难定位。这类"漏了也不报错"的设计是负债</li>
+ *   <li>动态字典类型（如字典管理页里按当前类型渲染）根本无法预先声明</li>
+ * </ul>
+ *
+ * <p>因此改为：<b>谁用到谁触发，缓存与并发去重由本模块统一负责。</b>
+ * 这正是"配置优先"在数据层的对应做法 —— 让调用方少写一行，且写错也没有代价。
  */
 export function dictOptions(dictType: string): Ref<DictOption[]> {
-  return ensureRef(dictType)
+  const holder = ensureRef(dictType)
+  if (dictType && !loadedTypes.has(dictType)) {
+    loadedTypes.add(dictType)
+    // 用 async IIFE 而不是 .then(回调)：
+    // ① 加载失败（返回空数组）时要移除标记，允许下次访问重试 ——
+    //    否则一次网络抖动会让这个字典在整个会话里永久为空
+    // ② `.then` 回调整体是个"只做副作用、无返回值"的形态，
+    //    会被 lint 规则 promise/always-return 拦下；加上一个无意义的 return 去迎合规则
+    //    不如直接用 await 表达"这段是顺序逻辑"
+    void (async () => {
+      const options = await loadDict(dictType)
+      if (options.length === 0) {
+        loadedTypes.delete(dictType)
+      }
+    })()
+  }
+  return holder
 }
 
 /** 按值查字典项（用于把存储值翻译成展示文案）。 */
@@ -158,4 +190,5 @@ export function toSelectOptions(dictType: string): Array<{ label: string; value:
 export function clearDictCache(): void {
   cache.clear()
   inflight.clear()
+  loadedTypes.clear()
 }

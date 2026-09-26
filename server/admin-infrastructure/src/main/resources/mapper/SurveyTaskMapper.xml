@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!--
+  调研任务列表与下拉。
+
+  为什么从 Wrapper 改成 XML（设计文档 §9.6）：
+    Wrapper 调用没有「具体方法」可标注 @DataScope，因此列表会绕过行级数据权限。
+    这不是风格问题 —— 漏标的后果是静默地多看到别的部门的数据。
+
+  ⚠️ 这里**不写**租户与数据权限条件：
+     · tenant_id 由 TenantLineInnerInterceptor 自动追加与填充
+     · 部门/个人范围由 DataPermissionInterceptor 依据 @DataScope 追加
+     手写它们会与拦截器重复，且一旦哪天漏写就会静默越权。
+
+  ⚠️ del_flag = 0 必须手写：XML 里没有 @TableLogic 的自动补全（Wrapper 才有）。
+-->
+<mapper namespace="com.webadmin.infrastructure.persistence.mapper.SurveyTaskMapper">
+
+    <select id="selectTaskPage" resultType="com.webadmin.infrastructure.persistence.po.SurveyTaskPO">
+        SELECT id, tenant_id, task_code, task_name, task_type, priority, owner_name, dept_id,
+               start_date, end_date, progress, status, remark,
+               create_by, create_time, update_by, update_time
+        FROM srvy_task
+        <where>
+            del_flag = 0
+            <if test="query.taskCode != null and query.taskCode != ''">
+                AND task_code LIKE CONCAT('%', #{query.taskCode}, '%')
+            </if>
+            <if test="query.taskName != null and query.taskName != ''">
+                AND task_name LIKE CONCAT('%', #{query.taskName}, '%')
+            </if>
+            <if test="query.taskType != null and query.taskType != ''">
+                AND task_type = #{query.taskType}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND status = #{query.status}
+            </if>
+            <if test="query.priority != null and query.priority != ''">
+                AND priority = #{query.priority}
+            </if>
+        </where>
+        <!--
+          排序固定（不开放任意字段排序）：ORDER BY 无法用占位符防护，
+          把前端传来的字段名拼进去就是 SQL 注入入口。
+          这里额外按 id 升序，保证同秒创建的多条记录顺序稳定 ——
+          否则翻页时可能出现同一条记录重复出现或漏掉。
+        -->
+        ORDER BY create_time DESC, id ASC
+    </select>
+
+    <select id="selectTaskOptions" resultType="com.webadmin.infrastructure.persistence.po.SurveyTaskPO">
+        SELECT id, task_code, task_name
+        FROM srvy_task
+        WHERE del_flag = 0
+        ORDER BY create_time DESC, id ASC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

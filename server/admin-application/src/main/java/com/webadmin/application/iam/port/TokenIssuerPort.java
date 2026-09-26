@@ -21,8 +21,17 @@ import java.util.Set;
  */
 public interface TokenIssuerPort {
 
-    /** 签发访问令牌。 */
-    IssuedToken issue(CurrentUser user, Set<String> roleKeys);
+    /**
+     * 签发访问令牌。
+     *
+     * @param tokenVersion 签发时的令牌版本号，会被写进令牌（{@code ver} 声明）。
+     *                     校验方将其与用户当前版本比对，不一致即失效 ——
+     *                     这是"改密码/停用/强制下线立即踢人"的实现基础。
+     *                     <b>必须</b>由调用方传入而不是由实现自行查询：
+     *                     登录流程刚保存过聚合，手里就是最新值，
+     *                     实现再查一次既浪费 also 可能读到过期缓存
+     */
+    IssuedToken issue(CurrentUser user, Set<String> roleKeys, long tokenVersion);
 
     /**
      * 签发结果。

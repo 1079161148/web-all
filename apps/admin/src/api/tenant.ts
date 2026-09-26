@@ -2,11 +2,19 @@ import {
   activateTenant,
   closeTenant,
   createTenant,
+  getTenantUsage,
+  listTenantPlans,
   pageTenants,
+  provisionTenant,
   renewTenant,
   suspendTenant
 } from '@admin/api'
-import type { CreateTenantRequest, RenewTenantRequest, TenantResponse } from '@admin/api'
+import type {
+  CreateTenantRequest,
+  ProvisionTenantRequest,
+  RenewTenantRequest,
+  TenantResponse
+} from '@admin/api'
 import type { ProTableQuery, ProTableRequest } from '@admin/ui'
 
 /**
@@ -111,4 +119,24 @@ export async function renewTenantAction(id: number, body: RenewTenantRequest): P
 /** 关闭租户（终态，不可恢复）。 */
 export async function closeTenantAction(id: number, reason: string): Promise<void> {
   await closeTenant(id, { reason })
+}
+
+/**
+ * 一键开通：建租户 + 初始化租户管理员 + 激活，一个事务完成。
+ *
+ * <p>响应里的初始密码是<b>明文且只出现这一次</b> ——
+ * 调用方（开通弹窗）必须立刻呈现给操作者，之后只能重置。
+ */
+export function provisionTenantAction(body: ProvisionTenantRequest) {
+  return provisionTenant(body)
+}
+
+/** 可用套餐（开通向导的套餐下拉）。 */
+export function fetchTenantPlans() {
+  return listTenantPlans()
+}
+
+/** 租户用量（看板）。 */
+export function fetchTenantUsage(id: number) {
+  return getTenantUsage(id)
 }

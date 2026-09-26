@@ -59,7 +59,8 @@ public class SecurityCurrentUserAdapter implements CurrentUserPort {
         if (TenantContext.get().isEmpty()) {
             TenantContext.set(tenantId);
         }
-        return Optional.of(new CurrentUser(userId, tenantId, username));
+        // jti 即会话 ID：注销当前设备、在线会话列表都以它为键
+        return Optional.of(new CurrentUser(userId, tenantId, username, jwt.getId()));
     }
 
     private static long toLong(Object value) {

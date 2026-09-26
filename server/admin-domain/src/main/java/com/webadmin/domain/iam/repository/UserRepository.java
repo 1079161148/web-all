@@ -64,6 +64,24 @@ public interface UserRepository {
      */
     void save(User user);
 
+    /**
+     * 统计<b>当前租户上下文</b>下的用户总数（用量看板用）。
+     *
+     * <p>⚠️ "当前租户"来自 {@code TenantContext}：为别的租户统计时，
+     * 调用方必须先显式切换上下文（并负责恢复）—— 租户隔离由拦截器施加，
+     * 这里<b>刻意不提供</b> {@code countByTenant(tenantId)} 这样的参数化入口，
+     * 否则就开了"绕过上下文查任意租户"的口子。
+     */
+    long countAll();
+
+    /**
+     * 当前租户上下文下<b>全部用户的 ID</b>（公告扇出用）。
+     *
+     * <p>只取 ID 列：扇出只需要 ID，加载完整聚合是纯浪费
+     * （与 {@code findIdsByRoleId} 同一取舍）。
+     */
+    List<Long> findAllIds();
+
     /** 逻辑删除。 */
     void delete(UserId id);
 }

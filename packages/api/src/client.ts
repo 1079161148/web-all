@@ -72,7 +72,7 @@ export interface RequestOptions {
  * 开发环境走 Vite 代理（见 apps/admin/vite.config.ts）以避免 CORS，
  * 生产环境由 Nginx / Ingress 同源反代，因此默认空字符串。
  */
-const BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? ''
+export const BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? ''
 
 /**
  * 租户标识请求头。
@@ -93,10 +93,31 @@ function currentTenantId(): string | null {
 
 /** 读取访问令牌（由登录流程写入 sessionStorage）。 */
 function accessToken(): string | null {
+  return readStorage('accessToken')
+}
+
+/** 读取刷新令牌（由登录/刷新流程写入 sessionStorage）。 */
+function refreshToken(): string | null {
+  return readStorage('refreshToken')
+}
+
+function readStorage(key: string): string | null {
   try {
-    return sessionStorage.getItem('accessToken')
+    return sessionStorage.getItem(key)
   } catch {
     return null
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    if (value) {
+      sessionStorage.setItem(key, value)
+    } else {
+      sessionStorage.removeItem(key)
+    }
+  } catch {
+    // 存储不可用时静默降级（与上方读取的兜底一致）
   }
 }
 
@@ -190,11 +211,186 @@ function isRawBody(body: unknown): boolean {
 }
 
 /**
+ * 全局 API 错误处理器。
+ *
+ * <h3>为什么需要这个钩子</h3>
+ * 「令牌过期 → 跳登录」「无权限 → 提示一下」这类处理<b>与具体接口无关</b>，
+ * 每个调用点各写一遍的结果必然是：有的页面跳登录、有的页面只弹个错、
+ * 有的页面什么都不做（表现为"点了没反应"）。
+ *
+ * <p>把这个能力放在请求层而不是组件层，是因为请求层是<b>所有错误的唯一汇聚点</b> ——
+ * 任何绕开它的做法（在拦截器之外再判断一遍）都会漏。
+ *
+ * <h3>为什么由应用注册，而不是本层直接跳转</h3>
+ * 请求层不知道路由、也不知道会话状态（那是应用的领域）。
+ * 因此这里只提供"通知"能力，怎么做由应用决定 ——
+ * 见 {@code apps/admin/src/api/error-handler.ts}。
+ */
+export type ApiErrorHandler = (error: ApiError) => void
+
+let apiErrorHandler: ApiErrorHandler | null = null
+
+/** 注册全局错误处理器。应用启动时调用一次。 */
+export function setApiErrorHandler(handler: ApiErrorHandler | null): void {
+  apiErrorHandler = handler
+}
+
+/** 抛出前先通知全局处理器。所有 API 错误都从这里出去，避免遗漏。 */
+function raise(error: ApiError): never {
+  apiErrorHandler?.(error)
+  throw error
+}
+
+// ---------------------------------------------------------------------
+// 访问令牌的静默刷新
+// ---------------------------------------------------------------------
+
+/**
+ * 进行中的刷新（单飞闸门）。
+ *
+ * <h3>为什么必须单飞</h3>
+ * 一个列表页会并发发出多个请求（菜单 + 权限 + 列表 + 字典）。
+ * 访问令牌过期时它们<b>一起</b>返回 401 —— 若各自刷新，会出现：
+ * <ul>
+ *   <li>后到的刷新读不到最新的刷新令牌（先到的已经轮换掉它）→ 被判为重放 →
+ *       <b>整族吊销、所有设备强制下线</b>。也就是说，不做单飞，
+ *       静默刷新本身就会触发我们部署的重放保护，把用户踢下线</li>
+ *   <li>刷新接口被打出数次无意义调用</li>
+ * </ul>
+ * 因此并发 401 共享同一次刷新：先到者发起，其余等待结果后各自重试。
+ */
+let refreshInflight: Promise<boolean> | null = null
+
+/** 登录/刷新接口自身不做静默刷新：它们 401 时唯一正确的出路就是重新登录。 */
+function isAuthPath(path: string): boolean {
+  return path === '/api/v1/auth/login' || path === '/api/v1/auth/refresh'
+}
+
+/** 刷新成功返回 true 并已把新令牌写入存储；失败返回 false（调用方走原 401 路径）。 */
+function ensureRefreshed(): Promise<boolean> {
+  if (!refreshInflight) {
+    refreshInflight = doRefresh().finally(() => {
+      refreshInflight = null
+    })
+  }
+  return refreshInflight
+}
+
+async function doRefresh(): Promise<boolean> {
+  try {
+    // ⚠️ 刷新令牌优先走 HttpOnly Cookie：credentials:'include' 让浏览器自动携带，
+    // JS 读不到它 —— XSS 偷不走这张"7 天的长期钥匙"。
+    // 请求体形式仅作兼容：滚动升级期间已登录的旧标签页里可能还有
+    // sessionStorage 残留的刷新令牌（新版本登录不再写入）。
+    // ⚠️ 刻意用裸 fetch 而不是本模块的 request()：
+    // request() 的 401 处理会再尝试刷新 —— 刷新接口自己 401 时就死循环了
+    const legacy = refreshToken()
+    const response = await fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        ...(legacy ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: legacy ? JSON.stringify({ refreshToken: legacy }) : undefined,
+      credentials: 'include'
+    })
+    if (!response.ok) {
+      // 兼容路径：服务端尚未升级（没有 Cookie 逻辑）且本地无残留令牌时会失败 ——
+      // 此时只能走"重新登录"的老路
+      return false
+    }
+    const payload = (await response.json()) as ApiResponse<{ accessToken?: string }>
+    if (!payload || payload.code !== SUCCESS_CODE || !payload.data?.accessToken) {
+      return false
+    }
+    writeStorage('accessToken', payload.data.accessToken)
+    // 新的刷新令牌经由 HttpOnly Cookie 轮换（Set-Cookie），不再写入 JS 可读的存储
+    return true
+  } catch {
+    // 网络/解析失败都按"刷新失败"处理：由原 401 路径收场（跳登录）
+    return false
+  }
+}
+
+/**
  * 发起请求并剥壳。
+ *
+ * <p>401 时先尝试<b>静默刷新</b>（见 {@link ensureRefreshed} 的单飞说明），
+ * 成功则用新令牌<b>重试一次</b>原请求；重试仍失败才按认证失败上抛 ——
+ * 这让"访问令牌 30 分钟过期"对使用者完全透明。
  *
  * @throws {ApiError} 业务错误码非 0，或 HTTP 层失败
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return doRequest<T>(path, options, true)
+}
+
+// ---------------------------------------------------------------------
+// 流式（SSE）请求的认证支持
+// ---------------------------------------------------------------------
+
+/**
+ * 流式请求的认证头快照（访问令牌 + 租户头）。
+ *
+ * <h3>为什么单独导出，而不是让调用方自己读 sessionStorage</h3>
+ * 令牌的存储位置、头名、租户头约定都是本模块的私有知识。
+ * 流式接口（AI 对话、Agent 指挥）因为"等完整 JSON"的前提不成立
+ * 而不能走 {@link request}，但<b>认证语义必须同源</b> ——
+ * 它们此前各自读 sessionStorage，于是绕过了静默刷新：
+ * 访问令牌一过期，普通接口静默续期、流式接口直接 401
+ * （实测症状：其他页面全都正常，只有 AI 对话报"AI 服务响应异常（401）"）。
+ */
+export function streamAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const token = accessToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+  const tenantId = currentTenantId()
+  if (tenantId) {
+    headers[TENANT_HEADER] = tenantId
+  }
+  return headers
+}
+
+/**
+ * 发送流式请求，并在 401 时静默刷新后**重试一次**。
+ *
+ * <p>与 {@link request} 的 401 处理完全同源（同一个 {@link ensureRefreshed}
+ * 单飞闸门）：并发刷新会触发令牌重放保护（整族吊销）—— 流式接口不能
+ * 自己再造一套刷新，否则这个坑会在 AI 对话上重演。
+ *
+ * <p>重试是安全的：401 意味着上游还没开始产生流，不存在"半截回答被重放"。
+ *
+ * @param path 相对路径（如 {@code /api/v1/ai/chat}）
+ * @param init fetch 初始化（method/body/signal/headers）
+ * @param base 基址，默认 {@link BASE_URL}；SSE 在 dev 下走 /sse-proxy 手工中间件
+ */
+export async function streamFetch(
+  path: string,
+  init: RequestInit = {},
+  base: string = BASE_URL
+): Promise<Response> {
+  const send = (): Promise<Response> =>
+    fetch(`${base}${path}`, {
+      ...init,
+      headers: {
+        ...(init.headers as Record<string, string> | undefined),
+        ...streamAuthHeaders()
+      },
+      // 与统一请求层一致：刷新令牌走 HttpOnly Cookie，流式请求同样要带上，
+      // 否则静默刷新（依赖 credentials:'include'）在同源代理下也可能失效
+      credentials: 'include'
+    })
+
+  const first = await send()
+  if (first.status === 401 && (await ensureRefreshed())) {
+    return send()
+  }
+  return first
+}
+
+async function doRequest<T>(path: string, options: RequestOptions, allowRefresh: boolean): Promise<T> {
   const { method = 'GET', params, body, headers, signal } = options
 
   const finalHeaders: Record<string, string> = {
@@ -233,9 +429,12 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   } catch (error) {
     // 网络层失败（断网、DNS、CORS、被 abort）—— 与业务错误区分开
     if (error instanceof DOMException && error.name === 'AbortError') {
+      // ⚠️ 主动取消**不**走全局处理器：它是正常流程
+      // （组件卸载、搜索框连续输入时的取消），
+      // 弹一个"网络连接失败"会给用户完全错误的信号
       throw error
     }
-    throw new ApiError(-1, '网络连接失败，请检查网络后重试', 0)
+    raise(new ApiError(-1, '网络连接失败，请检查网络后重试', 0))
   }
 
   const httpStatus = response.status
@@ -249,15 +448,22 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   try {
     payload = (await response.json()) as ApiResponse<T>
   } catch {
-    throw new ApiError(-1, `服务端返回了无法解析的响应（HTTP ${httpStatus}）`, httpStatus)
+    raise(new ApiError(-1, `服务端返回了无法解析的响应（HTTP ${httpStatus}）`, httpStatus))
   }
 
   if (!payload) {
-    throw new ApiError(-1, '响应体为空', httpStatus)
+    raise(new ApiError(-1, '响应体为空', httpStatus))
+  }
+
+  // 401 → 尝试静默刷新后重试一次。
+  // allowRefresh=false 的重试不再刷新：若新令牌仍被拒，说明是真正的吊销
+  // （被踢下线/改密/重放保护），必须走"跳登录"而不是再刷一次造成死循环
+  if (httpStatus === 401 && allowRefresh && !isAuthPath(path) && (await ensureRefreshed())) {
+    return doRequest<T>(path, options, false)
   }
 
   if (payload.code !== SUCCESS_CODE) {
-    throw new ApiError(payload.code, payload.msg || '请求失败', httpStatus)
+    raise(new ApiError(payload.code, payload.msg || '请求失败', httpStatus))
   }
 
   return payload.data

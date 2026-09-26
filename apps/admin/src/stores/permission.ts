@@ -22,6 +22,12 @@ import { buildRoutes, type DynamicRoute } from '@/router/dynamic'
  * 但点击后会被后端 {@code @PreAuthorize} 拒绝（设计文档 §7.2）。
  * <b>把它当作安全机制是严重误判；当作体验优化才是正确用法。</b>
  */
+/**
+ * 首页路径（静态路由，与权限无关）。
+ * 侧栏菜单的固定节点与标签栏的固定页签都依赖这一个常量，改路径只改这里。
+ */
+export const HOME_PATH = '/dashboard'
+
 export const usePermissionStore = defineStore('permission', () => {
   /** 后端下发的菜单（扁平）。 */
   const menus = ref<MenuDTO[]>([])
@@ -78,8 +84,24 @@ export const usePermissionStore = defineStore('permission', () => {
     loaded.value = false
   }
 
-  /** 侧边菜单树（由扁平菜单构建，供布局组件直接消费）。 */
-  const menuTree = computed(() => buildMenuTree(menus.value))
+  /**
+   * 侧边菜单树（由扁平菜单构建，供布局组件直接消费）。
+   *
+   * <p>「首页」由<b>前端前置</b>而不是走后端菜单表：首页是静态路由
+   * （见 {@code router/index.ts}，与权限无关、所有登录用户可见），
+   * 放进菜单表反而要为所有角色分配一条永远不变的记录。
+   * {@code menuTree} 同时是侧栏与命令面板的数据源，在这里前置保证两处一致。
+   */
+  const menuTree = computed<MenuNode[]>(() => [
+    {
+      id: 0, // 合成节点：0 是根占位值，不会与后端主键（从 1 开始）冲突
+      label: '首页',
+      path: HOME_PATH,
+      icon: 'Home',
+      children: []
+    },
+    ...buildMenuTree(menus.value)
+  ])
 
   return {
     menus,
@@ -118,6 +140,21 @@ export interface MenuNode {
  *       否则会出现点了没反应的死菜单。父级因权限收窄而变空是很常见的情形</li>
  * </ol>
  * 第 3 条容易被忽略，但它是"权限配置改了之后菜单变得很奇怪"的主要来源。
+ *
+ * <h3>⚠️ 为什么不改用 @admin/ui 的 flatToTree（刻意保留，不是遗漏）</h3>
+ * 项目里其它四处建树都已收敛到 {@code flatToTree}，唯独这里<b>不能换</b>：
+ * <ol>
+ *   <li><b>它在遍历中累积完整路径</b>（{@code parentPath} → {@code joinPath}）。
+ *       {@code flatToTree} 的契约是"扁平 → 嵌套"，不携带沿路径传递的状态</li>
+ *   <li><b>它需要后序剪枝</b>：判断"目录是否为空"必须在子树构建<b>之后</b>才能做。
+ *       而 {@code flatToTree} 的 {@code filter} 是前序的，表达不了这个条件</li>
+ * </ol>
+ * 硬套需要给通用 helper 加"路径累积"与"后序遍历钩子"两个只为这里服务的能力 ——
+ * 那会把它变复杂，而换来的代码并不比现在清晰。
+ *
+ * <p><b>把这段说明写在这里是有意的</b>：一个没有解释的近似重复实现，
+ * 会诱使后来人做一次错误的"合并"，而这类合并的破坏方式很隐蔽
+ * （路径拼接错位 / 空目录重新出现），测试也未必覆盖到。
  */
 function buildMenuTree(menus: MenuDTO[]): MenuNode[] {
   const navigable = menus.filter((menu) => menu.menuType !== 'BUTTON')

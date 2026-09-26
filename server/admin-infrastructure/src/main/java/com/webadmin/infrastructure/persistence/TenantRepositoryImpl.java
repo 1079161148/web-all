@@ -36,6 +36,17 @@ public class TenantRepositoryImpl implements TenantRepository {
     private final TenantConverter tenantConverter;
 
     @Override
+    public java.util.List<Tenant> findExpired(java.time.Instant now) {
+        return tenantMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TenantPO>()
+                        .eq(TenantPO::getStatus, com.webadmin.domain.iam.model.tenant.TenantStatus.ACTIVE)
+                        .lt(TenantPO::getExpireTime, now))
+                .stream()
+                .map(tenantConverter::toDomain)
+                .toList();
+    }
+
+    @Override
     public Optional<Tenant> findById(TenantId id) {
         return Optional.ofNullable(tenantMapper.selectById(id.value()))
                 .map(tenantConverter::toDomain);

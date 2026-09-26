@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { AdminConfigProvider } from '@admin/ui'
+// 根组件属于"首屏渲染之前就需要"，因此走窄入口（见 packages/ui/src/core.ts）
+import { AdminConfigProvider } from '@admin/ui/core'
 import { useAppStore } from '@/stores/app'
 
 /**
@@ -13,7 +14,7 @@ const appStore = useAppStore()
 </script>
 
 <template>
-  <AdminConfigProvider :mode="appStore.themeMode">
+  <AdminConfigProvider :mode="appStore.resolvedTheme" :primary="appStore.primaryColor || undefined">
     <router-view />
   </AdminConfigProvider>
 </template>

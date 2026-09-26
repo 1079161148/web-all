@@ -62,6 +62,13 @@ public class User {
     private Instant loginTime;
     private int failCount;
     private Instant lockUntil;
+    /**
+     * 令牌版本号：签发令牌时写进令牌，校验时与库里的值比对。
+     *
+     * <p>提升它即可让该用户<b>已签发的全部令牌</b>失效（改密码、停用、强制下线）。
+     * 详见 {@link #bumpTokenVersion()}。
+     */
+    private long tokenVersion;
     private final Set<RoleId> roleIds;
 
     private final List<DomainEvent> domainEvents = new ArrayList<>();
@@ -106,7 +113,8 @@ public class User {
                                     String email, String phone, Long deptId,
                                     Integer sex, String avatar, UserStatus status,
                                     String loginIp, Instant loginTime, int failCount,
-                                    Instant lockUntil, Set<RoleId> roleIds, Clock clock) {
+                                    Instant lockUntil, long tokenVersion,
+                                    Set<RoleId> roleIds, Clock clock) {
         User user = new User(id, tenantId, username, password, clock);
         user.nickname = nickname;
         user.email = email;
@@ -119,6 +127,8 @@ public class User {
         user.loginTime = loginTime;
         user.failCount = Math.max(failCount, 0);
         user.lockUntil = lockUntil;
+        // 负数无意义（列上有 DEFAULT 0，但历史数据/手工改库仍可能给出负数）→ 收敛到 0
+        user.tokenVersion = Math.max(tokenVersion, 0);
         if (roleIds != null) {
             user.roleIds.addAll(roleIds);
         }
@@ -128,6 +138,43 @@ public class User {
     // ==================================================================
     // 登录相关
     // ==================================================================
+
+    /**
+     * 断言当前用户允许登录。
+     *
+     * <p>放在聚合里而不是 Service 里，是为了让"能不能登录"只有一个判定入口。
+     * 注意它同时检查<b>状态</b>与<b>锁定截止时间</b> —— 后者是关键：
+     * {@code LOCKED} 状态可能在管理员未介入的情况下已经过期，
+     * 若只看状态就会把一个本该放行的用户拒之门外。
+     */
+    public long tokenVersion() {
+        return tokenVersion;
+    }
+
+    /**
+     * 提升令牌版本号：使该用户<b>已签发的全部令牌立即失效</b>。
+     *
+     * <h3>为什么吊销要靠"版本号"而不是"令牌黑名单"</h3>
+     * 无状态 JWT 的固有矛盾是"签发后无法撤回"。两种解法：
+     * <ul>
+     *   <li><b>黑名单</b>：逐个记录被吊销令牌的 ID。条目随登录次数增长、
+     *       必须设 TTL 兜底、且要保证"每个实例都查得到"（否则某台机器上仍然可用）</li>
+     *   <li><b>版本号</b>（本实现）：令牌里带签发时的版本，校验时与库里比对，
+     *       不一致即失效。一次自增就吊销<b>全部</b>令牌，<b>存储恒定为 1 个字段</b>，
+     *       且天然多实例一致（大家读同一行）</li>
+     * </ul>
+     *
+     * <p>调用点都是"安全状态发生变化"的操作：改密码（旧令牌可能已被他人持有）、
+     * 停用/锁定（本人不该再用）、管理员强制下线、以及在权限被大幅收回后
+     * 需要立即生效的场景。
+     *
+     * <p>为什么返回新版本号：调用方（如登录）往往要紧接着用它签新令牌，
+     * 返回可以省掉一次读，也避免"读到的还是旧值"这类时序问题。
+     */
+    public long bumpTokenVersion() {
+        this.tokenVersion += 1;
+        return this.tokenVersion;
+    }
 
     /**
      * 断言当前用户允许登录。

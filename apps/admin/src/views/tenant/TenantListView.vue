@@ -1,13 +1,21 @@
-<script setup lang="ts">
-import { ref } from 'vue'
-import { NInput, NModal, NSelect, ProTable, feedback } from '@admin/ui'
-import type { ProColumn, ProRowAction } from '@admin/ui'
-import type { CreateTenantRequest, TenantResponse } from '@admin/api'
+﻿<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { NAlert, NSpace, NTag, PageContainer, ProModal, ProTable, feedback } from '@admin/ui'
+import type { ProColumn, ProFormItem, ProRowAction } from '@admin/ui'
+import type {
+  PlanResponse,
+  ProvisionTenantRequest,
+  TenantProvisionResponse,
+  TenantResponse,
+  TenantUsageResponse
+} from '@admin/api'
 import {
   activateTenantAction,
   closeTenantAction,
-  createTenantAction,
   fetchTenantPage,
+  fetchTenantPlans,
+  fetchTenantUsage,
+  provisionTenantAction,
   renewTenantAction,
   suspendTenantAction
 } from '@/api/tenant'
@@ -31,7 +39,7 @@ import {
  * 泛型组件无法用 `InstanceType` 推导，而显式声明同时把「父组件能调用哪些方法」
  * 变成一份可读的契约 —— 比暴露整个组件实例更清晰，也更容易 mock 测试。
  */
-const tableRef = ref<{ reload: (resetPage?: boolean) => void } | null>(null)
+const tableRef = ref<{ reload: () => void; refresh: () => void } | null>(null)
 
 /**
  * 取行 ID，缺失即抛错。
@@ -86,8 +94,9 @@ const columns: ProColumn<TenantResponse>[] = [
     width: 110,
     search: 'select',
     options: planOptions,
-    // 搜索参数名与列 key 不一致时，用 searchParam 映射（此处 key 已是 planCode 的展示列，
-    // 为保持示例简洁，直接按 planName 匹配）
+    // 展示字段是 planName（企业版），而接口筛选参数是 planCode（ENTERPRISE）。
+    // 不声明 searchParam 时提交的 key 是 planName，后端收不到参数 → 筛选静默失效
+    searchParam: 'planCode',
     searchPlaceholder: '选择套餐'
   },
   { key: 'remainingUsers', title: '剩余用户数', width: 120 },
@@ -99,13 +108,19 @@ const columns: ProColumn<TenantResponse>[] = [
 /** 行操作：权限码已声明，P1 接入按钮权限指令后即可自动生效。 */
 const rowActions: ProRowAction<TenantResponse>[] = [
   {
+    key: 'usage',
+    label: '用量',
+    permission: 'iam:tenant:query',
+    onClick: (row) => openUsage(row)
+  },
+  {
     key: 'activate',
     label: '激活',
     disabled: (row) => row.status === 'ACTIVE',
     onClick: async (row) => {
       await activateTenantAction(requireId(row))
       feedback.success(`租户「${row.name}」已激活`)
-      tableRef.value?.reload(false)
+      tableRef.value?.refresh()
     }
   },
   {
@@ -116,7 +131,7 @@ const rowActions: ProRowAction<TenantResponse>[] = [
     onClick: async (row) => {
       await suspendTenantAction(requireId(row), '管理后台手动暂停')
       feedback.success(`租户「${row.name}」已暂停`)
-      tableRef.value?.reload(false)
+      tableRef.value?.refresh()
     }
   },
   {
@@ -125,7 +140,7 @@ const rowActions: ProRowAction<TenantResponse>[] = [
     onClick: async (row) => {
       await renewTenantAction(requireId(row), { months: 12 })
       feedback.success(`租户「${row.name}」已续期 12 个月`)
-      tableRef.value?.reload(false)
+      tableRef.value?.refresh()
     }
   },
   {
@@ -137,159 +152,314 @@ const rowActions: ProRowAction<TenantResponse>[] = [
     onClick: async (row) => {
       await closeTenantAction(requireId(row), '管理后台手动关闭')
       feedback.success(`租户「${row.name}」已关闭`)
-      tableRef.value?.reload(false)
+      tableRef.value?.refresh()
     }
   }
 ]
 
 // ---------------------------------------------------------------------
-// 新增租户
+// 一键开通（向导）
 // ---------------------------------------------------------------------
 
-const createVisible = ref(false)
-const submitting = ref(false)
+const provisionVisible = ref(false)
+const provisionSubmitting = ref(false)
+const plans = ref<PlanResponse[]>([])
+const provisionResult = ref<TenantProvisionResponse | null>(null)
+const resultVisible = ref(false)
 
-const createForm = ref<CreateTenantRequest>({
-  code: '',
-  name: '',
-  planCode: 'PRO',
-  remark: ''
-})
+/**
+ * 开通向导的套餐下拉来自后端 /plans 而不是写死：
+ * 套餐的配额定义在服务端（套餐注册表），前端抄一份迟早漂移 ——
+ * 表现是"下拉里写着 100 用户，实际套餐已改成 50"。
+ */
+const provisionItems = computed<ProFormItem[]>(() => [
+  {
+    field: 'code',
+    title: '租户编码',
+    required: true,
+    placeholder: '6~32 位小写字母、数字或连字符，如 acme-corp',
+    tip: '创建后不可修改，将作为租户在所有系统中的稳定标识'
+  },
+  { field: 'name', title: '租户名称', required: true, placeholder: '如：Acme 科技' },
+  {
+    field: 'planCode',
+    title: '套餐',
+    type: 'select',
+    required: true,
+    value: 'PRO',
+    options: plans.value.map((p) => ({
+      label: `${p.name}（${p.maxUsers ?? 0} 用户）`,
+      value: String(p.code ?? '')
+    }))
+  },
+  {
+    field: 'adminUsername',
+    title: '管理员账号',
+    required: true,
+    value: 'admin',
+    tip: '账号在租户内唯一；不同租户可以用相同账号（例如都用 admin），互不冲突'
+  },
+  {
+    field: 'adminPassword',
+    title: '初始密码',
+    placeholder: '留空则使用平台初始密码',
+    tip: '只在开通结果里显示一次，请立即转交租户管理员'
+  }
+])
 
-function openCreate(): void {
-  createForm.value = { code: '', name: '', planCode: 'PRO', remark: '' }
-  createVisible.value = true
+async function openProvision(): Promise<void> {
+  provisionResult.value = null
+  provisionVisible.value = true
+  if (plans.value.length === 0) {
+    try {
+      plans.value = await fetchTenantPlans()
+    } catch (error) {
+      feedback.error(error instanceof Error ? error.message : '读取套餐失败')
+    }
+  }
 }
 
-async function submitCreate(): Promise<void> {
-  submitting.value = true
-  try {
-    // 这里原先写的是 `await import('@/api/tenant')` 动态导入，但那是不必要的：
-    // 本文件的顶部已经静态导入了同一个模块，Vite 会报
-    // INEFFECTIVE_DYNAMIC_IMPORT —— 动态导入既没有减少首次加载体积
-    // （模块早已被打进同一个 chunk），又让"这个模块是否会按需加载"变得难以判断。
-    // **同一个模块只应有一种导入方式。**
-    await createTenantAction(createForm.value)
-    feedback.success('租户创建成功，当前为「待激活」状态，请激活后使用')
-    createVisible.value = false
-    tableRef.value?.reload(true)
-  } catch (error) {
-    // 后端返回的业务错误已由 ApiError 携带可读消息（如「租户编码已存在」）
-    feedback.error(error instanceof Error ? error.message : '创建失败')
-  } finally {
-    submitting.value = false
+/**
+ * 显式构造 payload 而不是断言表单值：后端需要哪些字段在这一处可见。
+ * adminPassword 为空时不下发该字段 —— 让后端走"平台初始密码"的默认逻辑，
+ * 与前端自己生成一个空字符串是两回事。
+ */
+async function submitProvision(values: Record<string, unknown>): Promise<void> {
+  const payload: ProvisionTenantRequest = {
+    code: String(values.code ?? ''),
+    name: String(values.name ?? ''),
+    planCode: String(values.planCode ?? 'PRO'),
+    adminUsername: String(values.adminUsername ?? 'admin'),
+    ...(values.adminPassword ? { adminPassword: String(values.adminPassword) } : {})
   }
+  provisionSubmitting.value = true
+  try {
+    provisionResult.value = await provisionTenantAction(payload)
+    provisionVisible.value = false
+    resultVisible.value = true
+    tableRef.value?.reload()
+  } finally {
+    provisionSubmitting.value = false
+  }
+}
+
+// ---------------------------------------------------------------------
+// 用量看板
+// ---------------------------------------------------------------------
+
+const usageVisible = ref(false)
+const usageLoading = ref(false)
+const usage = ref<TenantUsageResponse | null>(null)
+const usageTenantId = ref<number | null>(null)
+
+function openUsage(row: TenantResponse): void {
+  usageTenantId.value = requireId(row)
+  usage.value = null
+  usageVisible.value = true
+  void loadUsage()
+}
+
+async function loadUsage(): Promise<void> {
+  if (usageTenantId.value === null) {
+    return
+  }
+  usageLoading.value = true
+  try {
+    usage.value = await fetchTenantUsage(usageTenantId.value)
+  } catch (error) {
+    feedback.error(error instanceof Error ? error.message : '读取用量失败')
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+/** 已用占比（0~100）。总量为 0 时不显示进度（无意义）。 */
+function percent(used: number, initial: number): number {
+  if (initial <= 0) {
+    return 0
+  }
+  return Math.min(100, Math.round((used / initial) * 100))
+}
+
+function statusLabel(value: string | undefined): string {
+  return statusOptions.find((option) => option.value === value)?.label ?? String(value ?? '-')
+}
+
+function formatDateTime(value: string | undefined): string {
+  return value ? new Date(value).toLocaleString() : '-'
 }
 </script>
 
 <template>
-  <div class="tenant-list">
+  <PageContainer
+    title="租户管理"
+    description="租户是系统隔离的顶层单位；「一键开通」会同时初始化租户管理员并激活"
+  >
     <ProTable
       ref="tableRef"
       :columns="columns"
       :request="fetchTenantPage"
       :toolbar="['create', 'refresh']"
       :row-actions="rowActions"
-      empty-action-text="创建第一个租户"
-      @create="openCreate"
-      @empty-action="openCreate"
+      empty-action-text="开通第一个租户"
+      @create="openProvision"
+      @empty-action="openProvision"
     />
+  </PageContainer>
 
-    <n-modal v-model:show="createVisible" preset="card" title="新建租户" style="width: 520px">
-      <div class="tenant-list__form">
-        <div class="tenant-list__field">
-          <label>租户编码 <span class="tenant-list__required">*</span></label>
-          <n-input
-            v-model:value="createForm.code"
-            placeholder="6~32 位小写字母、数字或连字符，如 acme-corp"
-          />
-          <p class="tenant-list__hint">创建后不可修改，将作为租户在所有系统中的稳定标识</p>
-        </div>
+  <!-- 一键开通向导 -->
+  <ProModal
+    v-model:visible="provisionVisible"
+    title="一键开通租户"
+    :items="provisionItems"
+    :cols="1"
+    :loading="provisionSubmitting"
+    submit-text="开通"
+    :submit="submitProvision"
+    @error="(error: unknown) => feedback.error(error instanceof Error ? error.message : '开通失败')"
+  >
+    <p class="tenant-page__wizard-tip">
+      将一次完成：创建租户 → 初始化「租户管理员」角色与管理员账号 → 激活。
+      任一步失败整体回滚，不会留下无法进入的半成品租户。管理员账号计入该租户的用户配额。
+    </p>
+  </ProModal>
 
-        <div class="tenant-list__field">
-          <label>租户名称 <span class="tenant-list__required">*</span></label>
-          <n-input v-model:value="createForm.name" placeholder="如：Acme 科技" />
-        </div>
-
-        <div class="tenant-list__field">
-          <label>套餐 <span class="tenant-list__required">*</span></label>
-          <n-select v-model:value="createForm.planCode" :options="planOptions" />
-        </div>
-
-        <div class="tenant-list__field">
-          <label>备注</label>
-          <n-input v-model:value="createForm.remark" type="textarea" :rows="3" />
+  <!-- 开通结果：初始密码只在这里显示一次 -->
+  <ProModal v-model:visible="resultVisible" title="开通成功" :width="520" submit-text="完成">
+    <n-space vertical :size="12">
+      <n-alert type="success" :bordered="false">
+        租户已开通并激活，管理员现在就能登录使用。
+      </n-alert>
+      <div v-if="provisionResult" class="tenant-page__result">
+        <div>租户编码：<b>{{ provisionResult.tenantCode }}</b></div>
+        <div>套餐：{{ provisionResult.planCode }}</div>
+        <div>管理员账号：<b>{{ provisionResult.adminUsername }}</b></div>
+        <div>
+          初始密码：<b class="tenant-page__password">{{ provisionResult.initialPassword }}</b>
         </div>
       </div>
+      <p class="tenant-page__wizard-tip">
+        初始密码只在本次显示，请立即转交租户管理员；遗失后只能由平台重置。
+      </p>
+    </n-space>
+  </ProModal>
 
-      <template #footer>
-        <div class="tenant-list__footer">
-          <button type="button" class="tenant-list__btn" @click="createVisible = false">取消</button>
-          <button
-            type="button"
-            class="tenant-list__btn tenant-list__btn--primary"
-            :disabled="submitting || !createForm.code || !createForm.name"
-            @click="submitCreate"
+  <!-- 用量看板 -->
+  <ProModal
+    v-model:visible="usageVisible"
+    title="租户用量"
+    :width="600"
+    :loading="usageLoading"
+    submit-text="刷新"
+    @success="loadUsage"
+  >
+    <template v-if="usage">
+      <n-space vertical :size="14">
+        <div class="tenant-page__usage-head">
+          <span class="tenant-page__usage-name">
+            {{ usage.tenantName }}（{{ usage.tenantCode }}）
+          </span>
+          <NTag
+            size="small"
+            :bordered="false"
+            :type="usage.effectiveStatus === 'ACTIVE' ? 'success' : 'warning'"
           >
-            {{ submitting ? '提交中…' : '确定' }}
-          </button>
+            {{ statusLabel(usage.effectiveStatus) }}
+          </NTag>
         </div>
-      </template>
-    </n-modal>
-  </div>
+        <div class="tenant-page__meta">
+          套餐：{{ usage.planName }} · 实时用户数：{{ usage.liveUsers }} ·
+          到期：{{ formatDateTime(usage.expireTime) }}
+        </div>
+        <div v-for="dimension in usage.quota" :key="dimension.type" class="tenant-page__quota">
+          <div class="tenant-page__quota-head">
+            <span>{{ dimension.label }}</span>
+            <span class="tenant-page__quota-num">
+              已用 {{ dimension.used ?? 0 }} / {{ dimension.initial ?? 0 }}（余 {{ dimension.remaining ?? 0 }}）
+            </span>
+          </div>
+          <div class="tenant-page__quota-bar">
+            <div
+              class="tenant-page__quota-fill"
+              :class="{ 'tenant-page__quota-fill--full': percent(dimension.used ?? 0, dimension.initial ?? 0) >= 90 }"
+              :style="{ width: percent(dimension.used ?? 0, dimension.initial ?? 0) + '%' }"
+            ></div>
+          </div>
+        </div>
+      </n-space>
+    </template>
+  </ProModal>
 </template>
 
 <style scoped>
-.tenant-list__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--wa-spacing-lg, 16px);
+.tenant-page__wizard-tip {
+  margin: 0;
+  font-size: var(--wa-font-size-xs, 12px);
+  line-height: 1.6;
+  color: var(--wa-text-disabled, #a8b0ba);
 }
 
-.tenant-list__field {
+.tenant-page__result {
   display: flex;
   flex-direction: column;
   gap: var(--wa-spacing-xs, 4px);
+  padding: var(--wa-spacing-md, 12px);
+  font-size: var(--wa-font-size-md, 14px);
+  background: var(--wa-fill-light, #f5f7fa);
+  border-radius: var(--wa-radius-md, 4px);
 }
 
-.tenant-list__field label {
+.tenant-page__password {
+  font-family: monospace;
+  font-size: 15px;
+  color: var(--wa-color-primary, #2080f0);
+}
+
+.tenant-page__usage-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wa-spacing-sm, 8px);
+}
+
+.tenant-page__usage-name {
   font-size: var(--wa-font-size-md, 14px);
   color: var(--wa-text-primary, #1f2329);
 }
 
-.tenant-list__required {
-  color: var(--wa-color-error, #dc2626);
-}
-
-.tenant-list__hint {
-  margin: 0;
+.tenant-page__meta {
   font-size: var(--wa-font-size-xs, 12px);
   color: var(--wa-text-disabled, #a8b0ba);
 }
 
-.tenant-list__footer {
+.tenant-page__quota-head {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--wa-spacing-sm, 8px);
-}
-
-.tenant-list__btn {
-  padding: var(--wa-spacing-xs, 4px) var(--wa-spacing-lg, 16px);
-  border: 1px solid var(--wa-border, #e4e7ed);
-  border-radius: var(--wa-radius-md, 4px);
-  background: transparent;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: var(--wa-font-size-xs, 12px);
   color: var(--wa-text-primary, #1f2329);
-  cursor: pointer;
 }
 
-.tenant-list__btn--primary {
-  border-color: var(--wa-color-primary, #2563eb);
-  background: var(--wa-color-primary, #2563eb);
-  color: #fff;
+.tenant-page__quota-num {
+  color: var(--wa-text-disabled, #a8b0ba);
+  font-variant-numeric: tabular-nums;
 }
 
-.tenant-list__btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.tenant-page__quota-bar {
+  height: 6px;
+  background: var(--wa-fill-light, #eef0f3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tenant-page__quota-fill {
+  height: 100%;
+  background: var(--wa-color-primary, #2080f0);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* 用量接近上限时变红：这是"该提醒续费/升级了"的信号，不能等超额被拒才发现 */
+.tenant-page__quota-fill--full {
+  background: var(--wa-color-error, #d03050);
 }
 </style>

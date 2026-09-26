@@ -34,13 +34,32 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => accessToken.value.length > 0)
 
-  /** 登录并写入会话。 */
-  async function login(username: string, password: string, tenantId: string): Promise<void> {
+  /**
+   * 登录并写入会话。
+   *
+   * @param options.captchaId    图形验证码 id（服务端开启验证码时必填）
+   * @param options.captchaCode  用户输入的验证码
+   * @param options.rememberDays 免登录天数（1/7/30）。留空 = 不记住 ——
+   *                             此时刷新令牌 Cookie 为会话级，关闭浏览器即失效。
+   *                             具体有效期由<b>服务端</b>白名单校验并决定
+   */
+  async function login(
+    username: string,
+    password: string,
+    tenantId: string,
+    options: { captchaId?: string; captchaCode?: string; rememberDays?: number } = {}
+  ): Promise<void> {
     // 租户必须在登录请求<b>之前</b>写入：登录接口本身需要它来确定
     // "在哪个租户里查这个用户名"。此时还没有令牌，只能靠请求头传递。
     setTenantId(tenantId)
 
-    const result = await loginApi({ username, password })
+    const result = await loginApi({
+      username,
+      password,
+      captchaId: options.captchaId,
+      captchaCode: options.captchaCode,
+      rememberDays: options.rememberDays
+    })
 
     // 生成类型里 accessToken 是可选的（OpenAPI 未标 required），
     // 但"登录成功却没有令牌"在业务上不可能成立。
@@ -51,6 +70,8 @@ export const useAuthStore = defineStore('auth', () => {
     }
     setToken(result.accessToken)
     accessToken.value = result.accessToken
+    // 刷新令牌不落 JS 存储：登录响应经 Set-Cookie 下发 HttpOnly Cookie，
+    // 访问令牌过期时由请求层静默续期（见 @admin/api client.ts 的 doRefresh）
     user.value = result.user ?? null
 
     // 以服务端返回的租户为准，而不是用户手填的值 ——

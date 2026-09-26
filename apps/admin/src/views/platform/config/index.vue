@@ -1,7 +1,7 @@
-<script setup lang="ts">
-import { computed, h, ref } from 'vue'
-import { NInput, NModal, NTag, NTooltip, ProTable, feedback } from '@admin/ui'
-import type { ProColumn, ProRowAction } from '@admin/ui'
+﻿<script setup lang="ts">
+import { h, ref } from 'vue'
+import { NTag, NTooltip, PageContainer, ProModal, ProTable, feedback } from '@admin/ui'
+import type { ProColumn, ProFormItem, ProRowAction } from '@admin/ui'
 import type { ConfigRequest } from '@admin/api'
 import {
   createConfigAction,
@@ -32,7 +32,7 @@ interface ConfigRow {
   sourceTenantId?: number
 }
 
-const tableRef = ref<{ reload: (resetPage?: boolean) => void } | null>(null)
+const tableRef = ref<{ reload: () => void; refresh: () => void } | null>(null)
 
 /** 已展开查看的参数行 ID —— 按需展开，而不是全量显示。 */
 const revealed = ref<Set<number>>(new Set())
@@ -131,7 +131,7 @@ const rowActions: ProRowAction<ConfigRow>[] = [
       if (row.id === undefined) return
       await deleteConfigAction(row.id)
       feedback.success('参数已删除')
-      tableRef.value?.reload(false)
+      tableRef.value?.refresh()
     }
   }
 ]
@@ -139,20 +139,26 @@ const rowActions: ProRowAction<ConfigRow>[] = [
 // ---------------------------------------------------------------------
 
 const formVisible = ref(false)
-const submitting = ref(false)
 const editingId = ref<number | null>(null)
-const form = ref<ConfigRequest>({
-  configName: '',
-  configKey: '',
-  configValue: '',
-  remark: ''
-})
-const isEdit = computed(() => editingId.value !== null)
+const modalModel = ref<Record<string, unknown>>({})
+
+const formItems: ProFormItem[] = [
+  { field: 'configName', title: '参数名称', required: true, placeholder: '如 用户初始密码' },
+  {
+    field: 'configKey',
+    title: '参数键',
+    required: true,
+    placeholder: '如 sys.user.init-password',
+    tip: '小写字母开头，可含数字、点、下划线与连字符。代码里按它读取，创建后不建议修改。'
+  },
+  { field: 'configValue', title: '参数值', type: 'textarea', required: true, message: '请填写参数值' },
+  { field: 'remark', title: '备注', type: 'textarea', placeholder: '说明这个参数的用途与取值含义' }
+]
 
 function openForm(row: ConfigRow | null): void {
   if (row) {
     editingId.value = row.id ?? null
-    form.value = {
+    modalModel.value = {
       configName: row.configName ?? '',
       configKey: row.configKey ?? '',
       configValue: row.configValue ?? '',
@@ -160,44 +166,35 @@ function openForm(row: ConfigRow | null): void {
     }
   } else {
     editingId.value = null
-    form.value = { configName: '', configKey: '', configValue: '', remark: '' }
+    modalModel.value = {}
   }
   formVisible.value = true
 }
 
-async function submitForm(): Promise<void> {
-  if (!form.value.configName.trim() || !form.value.configKey.trim()) {
-    feedback.warning('请填写参数名称与参数键')
-    return
+/** 显式构造 payload：后端需要哪些字段在这一处可见，后端改字段时编译报错。 */
+async function submitForm(values: Record<string, unknown>): Promise<void> {
+  const payload: ConfigRequest = {
+    configName: String(values.configName ?? ''),
+    configKey: String(values.configKey ?? ''),
+    configValue: String(values.configValue ?? ''),
+    remark: values.remark ? String(values.remark) : ''
   }
-  if (!form.value.configValue.length) {
-    feedback.warning('请填写参数值')
-    return
+  if (editingId.value !== null) {
+    await updateConfigAction(editingId.value, payload)
+  } else {
+    await createConfigAction(payload)
   }
-  submitting.value = true
-  try {
-    if (editingId.value !== null) {
-      await updateConfigAction(editingId.value, form.value)
-    } else {
-      await createConfigAction(form.value)
-    }
-    feedback.success('保存成功')
-    formVisible.value = false
-    tableRef.value?.reload(false)
-  } catch (error) {
-    feedback.error(error instanceof Error ? error.message : '保存失败')
-  } finally {
-    submitting.value = false
-  }
+  feedback.success('保存成功')
 }
 </script>
 
 <template>
-  <div class="config-page">
-    <div class="config-page__notice">
-      参数值默认打码显示，<b>点击可展开</b>。这里不适合存放密钥类敏感信息 ——
-      密钥应走专门的密钥管理，而不是系统参数表。
-    </div>
+  <PageContainer title="参数配置" description="系统级参数，值默认打码显示，点击可展开">
+    <template #extra>
+      <span class="config-page__notice">
+        这里不适合存放密钥类敏感信息 —— 密钥应走专门的密钥管理，而不是系统参数表。
+      </span>
+    </template>
 
     <ProTable
       ref="tableRef"
@@ -209,46 +206,22 @@ async function submitForm(): Promise<void> {
       @create="openForm(null)"
       @empty-action="openForm(null)"
     />
+  </PageContainer>
 
-    <n-modal v-model:show="formVisible" preset="card"
-             :title="isEdit ? '编辑参数' : '新增参数'" style="width: 520px">
-      <div class="config-page__form">
-        <div class="config-page__field">
-          <label>参数名称 <span class="config-page__required">*</span></label>
-          <n-input v-model:value="form.configName" placeholder="如 用户初始密码" />
-        </div>
-        <div class="config-page__field">
-          <label>参数键 <span class="config-page__required">*</span></label>
-          <n-input v-model:value="form.configKey" placeholder="如 sys.user.init-password" />
-          <p class="config-page__tip">
-            小写字母开头，可含数字、点、下划线与连字符。代码里按它读取，创建后不建议修改。
-          </p>
-        </div>
-        <div class="config-page__field">
-          <label>参数值 <span class="config-page__required">*</span></label>
-          <n-input v-model:value="form.configValue" type="textarea" :rows="2" />
-        </div>
-        <div class="config-page__field">
-          <label>备注</label>
-          <n-input v-model:value="form.remark" type="textarea" :rows="2" placeholder="说明这个参数的用途与取值含义" />
-        </div>
-      </div>
-      <template #footer>
-        <div class="config-page__footer">
-          <n-button @click="formVisible = false">取消</n-button>
-          <n-button type="primary" :loading="submitting" @click="submitForm">确定</n-button>
-        </div>
-      </template>
-    </n-modal>
-  </div>
+  <ProModal
+    v-model:visible="formVisible"
+    :title="editingId !== null ? '编辑参数' : '新增参数'"
+    :items="formItems"
+    :model="modalModel"
+    :cols="1"
+    :submit="submitForm"
+    :on-success="() => tableRef?.refresh()"
+    @error="(error: unknown) => feedback.error(error instanceof Error ? error.message : '保存失败')"
+  />
 </template>
 
 <style scoped>
 .config-page__notice {
-  margin-bottom: var(--wa-spacing-md, 12px);
-  padding: var(--wa-spacing-md, 12px);
-  border-left: 3px solid var(--wa-color-warning, #d97706);
-  background: var(--wa-bg-elevated, #fff);
   font-size: var(--wa-font-size-xs, 12px);
   line-height: 1.8;
   color: var(--wa-text-secondary, #5c6570);
@@ -273,39 +246,5 @@ async function submitForm(): Promise<void> {
 
 .config-page__muted {
   color: var(--wa-text-disabled, #a8b0ba);
-}
-
-.config-page__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--wa-spacing-lg, 16px);
-}
-
-.config-page__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--wa-spacing-xs, 4px);
-}
-
-.config-page__field label {
-  font-size: var(--wa-font-size-md, 14px);
-  color: var(--wa-text-primary, #1f2329);
-}
-
-.config-page__required {
-  color: var(--wa-color-error, #dc2626);
-}
-
-.config-page__tip {
-  margin: 0;
-  font-size: var(--wa-font-size-xs, 12px);
-  line-height: 1.6;
-  color: var(--wa-text-disabled, #a8b0ba);
-}
-
-.config-page__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--wa-spacing-sm, 8px);
 }
 </style>

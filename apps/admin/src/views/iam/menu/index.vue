@@ -1,9 +1,24 @@
-<script setup lang="ts">
-import { computed, h, ref } from 'vue'
-import { NInput, NInputNumber, NModal, NSelect, NSwitch, ProTable, feedback } from '@admin/ui'
-import type { ProColumn, ProRowAction, ProTableQuery } from '@admin/ui'
+﻿<script setup lang="ts">
+import { computed, h, onMounted, ref } from 'vue'
+import {
+  NInput,
+  NInputNumber,
+  NSelect,
+  NSwitch,
+  IconPicker,
+  PageContainer,
+  ProModal,
+  ProTable,
+  TREE_PRESETS,
+  feedback,
+  filterFlatTreeByLabel,
+  flatOptionsWithDepth,
+  flatToTableTree
+} from '@admin/ui'
+import type { ProColumn, ProIconOption, ProRowAction, ProTableQuery } from '@admin/ui'
+import { loadMenuIcons } from '@/icons'
 import { useDict } from '@/composables/useDict'
-import DictTag from '@/components/DictTag.vue'
+import { DictTag } from '@admin/ui'
 import type { MenuDTO, MenuRequest } from '@admin/api'
 import { createMenuAction, deleteMenuAction, loadMenuList, updateMenuAction } from '@/api/iam'
 
@@ -20,43 +35,57 @@ import { createMenuAction, deleteMenuAction, loadMenuList, updateMenuAction } fr
  * "菜单点不开"或"按钮永远不显示"。因此表单里对两者的格式给出示例。
  */
 
-const tableRef = ref<{ reload: (resetPage?: boolean) => void } | null>(null)
+const tableRef = ref<{ reload: () => void; refresh: () => void } | null>(null)
 const dicts = useDict('sys_menu_type', 'sys_yes_no')
+
+/**
+ * 图标候选（整包）。
+ *
+ * <p>刻意<b>异步</b>载入：整包图标约几百 KB，而它只有在这个页面（尤其是
+ * 打开表单选图标时）才需要。首屏只注册常用集，整包走懒加载 chunk ——
+ * 这是首屏体积门禁（设计 §12.1）能守住的直接原因，见 `@/icons` 的说明。
+ */
+const iconOptions = ref<ProIconOption[]>([])
 
 const menus = ref<MenuDTO[]>([])
 
 /**
- * 菜单没有物化路径（与部门不同），层级需要沿 parentId 向上回推。
- * 计算结果缓存成 Map，避免每行都重新走一遍链（行数 × 深度 的重复计算）。
+ * 菜单是<b>全量树</b>（不分页、后端无筛选参数），因此名称筛选在前端做 ——
+ * 数据已在内存，再发一次请求没有意义。用共享的 {@code filterFlatTreeByLabel}：
+ * 命中节点连同祖先一起保留，否则子菜单会失去父级、树形展开失效。
  */
-const depthById = computed(() => {
-  const byId = new Map<number, MenuDTO>()
-  for (const menu of menus.value) {
-    if (menu.id !== undefined) byId.set(menu.id, menu)
-  }
-  const depths = new Map<number, number>()
-  for (const menu of menus.value) {
-    if (menu.id === undefined) continue
-    let depth = 0
-    let cursor = menu
-    const guard = new Set<number>()
-    // guard 防环：脏数据（父子互指）会让这个循环永不结束、把页面卡死
-    while (cursor.parentId && cursor.parentId !== 0 && !guard.has(cursor.id as number)) {
-      guard.add(cursor.id as number)
-      const parent = byId.get(cursor.parentId)
-      if (!parent) break
-      depth += 1
-      cursor = parent
-    }
-    depths.set(menu.id, depth)
-  }
-  return depths
+// 进入本页即预热图标候选：等表单打开再拉会让选择器"空一拍"。
+// 这份代价只发生在本页（懒加载 chunk），不影响首屏与其它页面。
+onMounted(() => {
+  void loadMenuIcons().then((icons) => {
+    iconOptions.value = icons
+  })
 })
 
-async function fetchMenuPage(_query: ProTableQuery) {
+async function fetchMenuPage(query: ProTableQuery) {
   const list = (await loadMenuList()) ?? []
+  // menus 始终保存全量：新增/编辑的"上级节点"下拉与"是否有子节点"的判断都依赖完整列表
   menus.value = list
-  return { records: list, total: list.length, page: 1, size: Math.max(list.length, 1) }
+  const keyword = typeof query.menuName === 'string' ? query.menuName : ''
+  const filtered =
+    keyword.trim() === ''
+      ? list
+      : filterFlatTreeByLabel(list, keyword, { labelOf: TREE_PRESETS.menu.labelOf })
+  // 层级由 vxe 的树形展开表达（gridProps.treeConfig），不再手动算缩进
+  return {
+    records: flatToTableTree(filtered, { labelOf: (menu) => menu.menuName ?? '未命名菜单' }),
+    total: filtered.length,
+    page: 1,
+    size: Math.max(filtered.length, 1)
+  }
+}
+
+/**
+ * vxe 树形配置（内核能力，原样透传不重写）。
+ * 默认全部展开：菜单总量在几十条量级，收起状态反而让人找不到刚加的子节点。
+ */
+const menuGridProps = {
+  treeConfig: { rowField: 'id', childrenField: 'children', expandAll: true }
 }
 
 const columns: ProColumn<MenuDTO>[] = [
@@ -64,12 +93,10 @@ const columns: ProColumn<MenuDTO>[] = [
     key: 'menuName',
     title: '菜单名称',
     minWidth: 200,
-    renderFn: (row) =>
-      h(
-        'span',
-        { style: { paddingLeft: `${(depthById.value.get(row.id as number) ?? 0) * 20}px` } },
-        row.menuName ?? ''
-      )
+    // 首列承载树形展开按钮与缩进
+    treeNode: true,
+    search: 'input',
+    searchPlaceholder: '模糊匹配'
   },
   {
     key: 'menuType',
@@ -121,7 +148,7 @@ const rowActions: ProRowAction<MenuDTO>[] = [
       if (row.id === undefined) return
       await deleteMenuAction(row.id)
       feedback.success('菜单已删除')
-      tableRef.value?.reload(false)
+      tableRef.value?.refresh()
     }
   }
 ]
@@ -166,17 +193,16 @@ const needComponent = computed(() => form.value.menuType === 'MENU')
 const needPerms = computed(() => form.value.menuType === 'BUTTON')
 const needPath = computed(() => form.value.menuType !== 'BUTTON')
 
-const parentOptions = computed(() => {
-  const options = menus.value
-    .filter((menu) => menu.id !== undefined && menu.menuType !== 'BUTTON')
-    .filter((menu) => menu.id !== editingId.value)
-    .map((menu) => ({
-      label: `${'　'.repeat(depthById.value.get(menu.id as number) ?? 0)}${menu.menuName ?? ''}`,
-      value: menu.id as number
-    }))
-  options.unshift({ label: '— 根节点 —', value: 0 })
-  return options
-})
+const parentOptions = computed(() => [
+  { label: '— 根节点 —', value: 0 },
+  ...flatOptionsWithDepth(menus.value, {
+    labelOf: TREE_PRESETS.menu.labelOf,
+    valueOf: (menu) => menu.id as number,
+    filter: (menu) =>
+      // 按钮不能作为父节点：它是权限点，不是导航层级
+      menu.menuType !== 'BUTTON' && menu.id !== editingId.value
+  })
+])
 
 function openForm(row: MenuDTO | null, parent: MenuDTO | null): void {
   if (row) {
@@ -243,7 +269,7 @@ async function submitForm(): Promise<void> {
     }
     feedback.success('保存成功')
     formVisible.value = false
-    tableRef.value?.reload(false)
+    tableRef.value?.refresh()
   } catch (error) {
     feedback.error(error instanceof Error ? error.message : '保存失败')
   } finally {
@@ -257,11 +283,13 @@ const menuTypeOptions = computed(() =>
 </script>
 
 <template>
-  <div class="menu-page">
-    <div class="menu-page__notice">
-      菜单是<b>平台级共享定义</b>，修改会影响所有租户。前端页面路径由 <code>component</code> 决定，
-      需与 <code>src/views</code> 下的文件路径一致（如 <code>iam/user/index</code>）。
-    </div>
+  <PageContainer title="菜单管理" description="菜单是平台级共享定义，修改会影响所有租户">
+    <template #extra>
+      <span class="menu-page__notice">
+        页面路径由 <code>component</code> 决定，需与 <code>src/views</code> 下的文件路径一致
+        （如 <code>iam/user/index</code>）。
+      </span>
+    </template>
 
     <ProTable
       ref="tableRef"
@@ -270,13 +298,24 @@ const menuTypeOptions = computed(() =>
       :toolbar="['create', 'refresh']"
       :row-actions="rowActions"
       :default-page-size="500"
+      :grid-props="menuGridProps"
       empty-action-text="创建第一个菜单"
       @create="openForm(null, null)"
       @empty-action="openForm(null, null)"
     />
+  </PageContainer>
 
-    <n-modal v-model:show="formVisible" preset="card" :title="isEdit ? '编辑菜单' : '新增菜单'" style="width: 600px">
-      <div class="menu-page__form">
+  <!--
+    表单含 IconPicker（自定义控件）与按类型联动的字段组，不是纯 items 可表达的表单，
+    因此用 ProModal 的默认插槽承接；开关/重置/底部按钮由 ProModal 统一提供
+  -->
+  <ProModal
+    v-model:visible="formVisible"
+    :title="isEdit ? '编辑菜单' : '新增菜单'"
+    :loading="submitting"
+    @success="submitForm"
+  >
+    <div class="menu-page__form">
         <div class="menu-page__field">
           <label>上级节点</label>
           <n-select v-model:value="form.parentId" :options="parentOptions" />
@@ -292,6 +331,14 @@ const menuTypeOptions = computed(() =>
         <div class="menu-page__field">
           <label>菜单名称 <span class="menu-page__required">*</span></label>
           <n-input v-model:value="form.menuName" placeholder="如 用户管理" />
+        </div>
+        <div class="menu-page__field">
+          <label>图标</label>
+          <IconPicker v-model="form.icon" :icons="iconOptions" placeholder="选择菜单图标" />
+          <p class="menu-page__tip">
+            图标名与后端一致（如 {@code Settings} / {@code User}），才会在侧栏正确显示；
+            留空则父级菜单以首字母占位。
+          </p>
         </div>
         <div v-if="needPath" class="menu-page__field">
           <label>路由地址 <span class="menu-page__required">*</span></label>
@@ -332,22 +379,11 @@ const menuTypeOptions = computed(() =>
           </label>
         </div>
       </div>
-      <template #footer>
-        <div class="menu-page__footer">
-          <n-button @click="formVisible = false">取消</n-button>
-          <n-button type="primary" :loading="submitting" @click="submitForm">确定</n-button>
-        </div>
-      </template>
-    </n-modal>
-  </div>
+  </ProModal>
 </template>
 
 <style scoped>
 .menu-page__notice {
-  margin-bottom: var(--wa-spacing-md, 12px);
-  padding: var(--wa-spacing-md, 12px);
-  border-left: 3px solid var(--wa-color-warning, #d97706);
-  background: var(--wa-bg-elevated, #fff);
   font-size: var(--wa-font-size-xs, 12px);
   line-height: 1.8;
   color: var(--wa-text-secondary, #5c6570);
@@ -404,12 +440,6 @@ const menuTypeOptions = computed(() =>
   gap: var(--wa-spacing-sm, 8px);
   font-size: var(--wa-font-size-md, 14px);
   color: var(--wa-text-primary, #1f2329);
-}
-
-.menu-page__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--wa-spacing-sm, 8px);
 }
 
 code {

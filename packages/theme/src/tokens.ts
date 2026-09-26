@@ -170,11 +170,26 @@ export interface ThemeTokens {
   layout: typeof layout
 }
 
-/** 取得指定模式下的完整令牌集。 */
-export function getTokens(mode: ThemeMode): ThemeTokens {
+/** 取得指定模式下的完整令牌集。
+ *
+ *  @param primaryOverride 自定义品牌主色（十六进制，如 `#722ed1`）。
+ *  传入后 primary 三色阶被替换：hover/pressed **按明暗模式派生** ——
+ *  暗色下悬停更亮、按压回落主色；浅色下悬停微亮、按压更深。
+ *  派生而不是要求调用方给三个色，是因为"调色板任意改色"场景下
+ *  用户只有一个颜色，另外两个必须可推导。 */
+export function getTokens(mode: ThemeMode, primaryOverride?: string): ThemeTokens {
+  const base = mode === 'dark' ? darkColors : lightColors
+  const colors: ColorPalette = primaryOverride
+    ? {
+        ...base,
+        primary: primaryOverride,
+        primaryHover: mixColor(primaryOverride, '#ffffff', mode === 'dark' ? 0.25 : 0.14),
+        primaryPressed: mixColor(primaryOverride, '#000000', mode === 'dark' ? 0.05 : 0.18)
+      }
+    : base
   return {
     mode,
-    colors: mode === 'dark' ? darkColors : lightColors,
+    colors,
     neutrals: mode === 'dark' ? darkNeutrals : lightNeutrals,
     spacing,
     radius,
@@ -186,6 +201,21 @@ export function getTokens(mode: ThemeMode): ThemeTokens {
   }
 }
 
+/** 颜色混合：hex 朝 white/black 按比例靠近（色阶派生的最小实现）。 */
+function mixColor(hex: string, toward: string, ratio: number): string {
+  const parse = (value: string): [number, number, number] => [
+    parseInt(value.slice(1, 3), 16),
+    parseInt(value.slice(3, 5), 16),
+    parseInt(value.slice(5, 7), 16)
+  ]
+  const from = parse(hex)
+  const to = parse(toward)
+  const mixed = from.map((channel, index) =>
+    Math.round(channel + (to[index] - channel) * ratio)
+  )
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
+}
+
 /** CSS 变量前缀。 */
 const CSS_VAR_PREFIX = '--wa'
 
@@ -195,8 +225,8 @@ const CSS_VAR_PREFIX = '--wa'
  * <p>这样 UnoCSS、自研组件、第三方库（vxe-table 主题桥接）都能消费同一套变量，
  * 实现「改一处、全站生效」。
  */
-export function toCssVariables(mode: ThemeMode): Record<string, string> {
-  const tokens = getTokens(mode)
+export function toCssVariables(mode: ThemeMode, primaryOverride?: string): Record<string, string> {
+  const tokens = getTokens(mode, primaryOverride)
   const vars: Record<string, string> = {}
 
   Object.entries(tokens.colors).forEach(([key, value]) => {
@@ -214,6 +244,11 @@ export function toCssVariables(mode: ThemeMode): Record<string, string> {
   Object.entries(tokens.fontSize).forEach(([key, value]) => {
     vars[`${CSS_VAR_PREFIX}-font-size-${key}`] = value
   })
+  // 阴影同样是 Token 的一部分：不导出的结果是「组件要么硬编码阴影、
+  // 要么没有阴影」—— ProCommand 的浮层就因此漏过一次
+  Object.entries(tokens.shadow).forEach(([key, value]) => {
+    vars[`${CSS_VAR_PREFIX}-shadow-${key}`] = value
+  })
   Object.entries(tokens.layout).forEach(([key, value]) => {
     vars[`${CSS_VAR_PREFIX}-layout-${kebab(key)}`] = value
   })
@@ -227,9 +262,13 @@ function kebab(input: string): string {
 }
 
 /** 把令牌写入 DOM（供应用启动时调用）。 */
-export function applyTokensToDom(mode: ThemeMode, target?: HTMLElement): void {
+export function applyTokensToDom(
+  mode: ThemeMode,
+  primaryOverride?: string,
+  target?: HTMLElement
+): void {
   const element = target ?? document.documentElement
-  const vars = toCssVariables(mode)
+  const vars = toCssVariables(mode, primaryOverride)
   Object.entries(vars).forEach(([key, value]) => {
     element.style.setProperty(key, value)
   })

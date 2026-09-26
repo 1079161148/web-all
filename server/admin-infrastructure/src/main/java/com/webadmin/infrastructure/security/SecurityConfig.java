@@ -53,6 +53,14 @@ public class SecurityConfig {
             "/api/v1/auth/login",
             "/api/v1/auth/captcha",
             "/api/v1/auth/refresh",
+            // 自助注册：匿名可访问，但只创建"无角色"账号且必须过验证码与 IP 限流
+            // （见 RegisterAppService 的安全模型说明）
+            "/api/v1/auth/register",
+            // SSE 消息流：鉴权靠一次性短票据（EventSource 无法携带请求头），
+            // 不是匿名可访问 —— 见 MessageController.stream 的说明
+            "/api/v1/messages/stream",
+            // WebSocket 监控流：鉴权同样是握手期一次性短票据（复用 SSE 票据池）
+            "/ws/**",
             // OpenAPI 契约与文档页（生产应通过反向代理屏蔽，见设计文档 §14.2）
             "/v3/api-docs/**",
             "/swagger-ui/**",
@@ -65,7 +73,9 @@ public class SecurityConfig {
     );
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtTokenProvider tokenProvider)
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtTokenProvider tokenProvider,
+                                                   com.webadmin.application.iam.port.SessionRegistryPort sessionRegistry,
+                                                   com.webadmin.application.iam.port.TokenVersionPort tokenVersionPort)
             throws Exception {
         http
                 // 前后端分离 + 无状态令牌，不使用 Cookie 会话，故无需 CSRF 保护。
@@ -89,7 +99,7 @@ public class SecurityConfig {
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 writeError(response, HttpServletResponse.SC_FORBIDDEN,
                                         CommonErrorCode.ACCESS_DENIED)))
-                .addFilterBefore(new JwtAuthenticationFilter(tokenProvider),
+                .addFilterBefore(new JwtAuthenticationFilter(tokenProvider, sessionRegistry, tokenVersionPort),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

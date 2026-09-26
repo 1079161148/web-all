@@ -5,6 +5,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
+      "@admin/ui/core": ["../../packages/ui/src/core.ts"],
       "@admin/ui": ["../../packages/ui/src/index.ts"],
       "@admin/api": ["../../packages/api/src/index.ts"],
       "@admin/theme": ["../../packages/theme/src/index.ts"]

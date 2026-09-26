@@ -31,6 +31,8 @@ public enum IamErrorCode implements ErrorCode {
     USERNAME_INVALID(31003, "用户名格式不合法"),
     USER_ILLEGAL_STATE(31004, "用户当前状态不允许该操作"),
     PASSWORD_TOO_WEAK(31005, "密码强度不足"),
+    REFRESH_TOKEN_INVALID(31006, "刷新令牌无效或已过期，请重新登录"),
+    REFRESH_TOKEN_REUSED(31007, "检测到刷新令牌被重复使用，为保护账号已强制下线相关会话，请重新登录"),
 
     // ---- 3xxxx 角色 / 权限 ----
     ROLE_NOT_FOUND(32001, "角色不存在"),

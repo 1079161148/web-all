@@ -9,7 +9,10 @@ import type { CurrentUserDTO } from './currentUserDTO';
 export interface LoginResult {
   accessToken?: string;
   expiresInSeconds?: number;
+  refreshToken?: string;
+  refreshExpiresInSeconds?: number;
   user?: CurrentUserDTO;
   permissions?: string[];
   roles?: string[];
+  rememberDays?: number;
 }

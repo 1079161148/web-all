@@ -38,6 +38,7 @@ public enum CommonErrorCode implements ErrorCode {
     ACCOUNT_DISABLED(20005, "账号已被停用"),
     TOKEN_EXPIRED(20006, "登录已过期，请重新登录", 401),
     CAPTCHA_INVALID(20007, "验证码错误或已失效"),
+    REGISTER_DISABLED(20008, "注册功能已关闭，请联系管理员开通账号"),
     ;
 
     private final int code;

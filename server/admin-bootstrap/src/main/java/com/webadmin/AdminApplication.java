@@ -2,6 +2,7 @@ package com.webadmin;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * 中台系统启动类。
@@ -14,6 +15,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * {@code @Repository} / {@code @Configuration} 都能被发现，无需逐层声明扫描路径。
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan("com.webadmin.interfaces")
 public class AdminApplication {
 
     public static void main(String[] args) {
